@@ -177,6 +177,12 @@ pub struct EncryptedStream {
     encrypt_count: u64,
     encrypted_buf: BytesMut,
     decrypted_buf: BytesMut,
+    /// FORK: ciphertext produced but not yet accepted by the socket.
+    ///
+    /// `poll_write` used to throw away the underlying `poll_write`'s result, so a `Pending` or a
+    /// short write silently dropped bytes **after** the nonce counter had advanced -- which
+    /// desynchronises the record layer permanently. See the comment on `poll_write`.
+    pending_write: BytesMut,
     encrypted_readbuf_inner: [u8; 1042],
     packet_len: usize,
     decrypted_ready: bool,
@@ -217,6 +223,7 @@ impl EncryptedStream {
                 encrypt_count: 0,
                 encrypted_buf,
                 decrypted_buf,
+                pending_write: BytesMut::new(),
                 encrypted_readbuf_inner: [0; 1042],
                 packet_len: 0,
                 decrypted_ready: false,
@@ -290,7 +297,12 @@ impl EncryptedStream {
                 Poll::Ready(()) => {
                     self.encrypted_buf.extend_from_slice(r_buf.filled());
 
-                    if self.encrypted_buf.len() == self.packet_len + 2 {
+                    // FORK: `>=`, not `==`. A read can deliver more than one frame -- two
+                    // pipelined requests in a single segment is enough -- and an equality test
+                    // then never holds again, stalling the connection for good. `read_encrypted`
+                    // advances past exactly one frame and keeps the remainder, so the surplus is
+                    // already handled correctly once we get there.
+                    if self.encrypted_buf.len() >= self.packet_len + 2 {
                         self.missing_data_for_encrypted_buf = false;
                         self.missing_data_for_decrypted_buf = true;
 
@@ -301,6 +313,21 @@ impl EncryptedStream {
                 },
             }
         } else {
+            // FORK: a previous frame may have left a whole further frame already buffered.
+            // Polling the socket first would block on bytes the controller has no reason to send,
+            // because it is waiting on our response to the request sitting in this buffer.
+            if self.encrypted_buf.len() >= 2 {
+                let packet_len = LittleEndian::read_u16(&self.encrypted_buf[..2]) as usize + 16;
+
+                if self.encrypted_buf.len() >= packet_len + 2 {
+                    self.packet_len = packet_len;
+                    self.missing_data_for_encrypted_buf = false;
+                    self.missing_data_for_decrypted_buf = true;
+
+                    return self.read_encrypted(buf);
+                }
+            }
+
             let mut r_buf = ReadBuf::new(&mut self.encrypted_readbuf_inner);
             let r = AsyncRead::poll_read(Pin::new(&mut self.stream), cx, &mut r_buf)?;
 
@@ -312,7 +339,7 @@ impl EncryptedStream {
                     if self.encrypted_buf.len() >= 2 {
                         self.packet_len = LittleEndian::read_u16(&self.encrypted_buf[..2]) as usize + 16;
 
-                        if self.encrypted_buf.len() == self.packet_len + 2 {
+                        if self.encrypted_buf.len() >= self.packet_len + 2 {
                             self.missing_data_for_encrypted_buf = false;
                             self.missing_data_for_decrypted_buf = true;
 
@@ -446,30 +473,80 @@ impl AsyncRead for EncryptedStream {
     }
 }
 
+impl EncryptedStream {
+    /// FORK: push buffered ciphertext at the socket until the socket stops taking it.
+    ///
+    /// Returns `Pending` only while bytes remain, so a caller that needs the buffer empty can
+    /// `ready!` on it. The inner `poll_write` registers the waker when it returns `Pending`.
+    fn drain_pending_write(&mut self, cx: &mut Context) -> Poll<std::result::Result<(), Error>> {
+        while !self.pending_write.is_empty() {
+            match AsyncWrite::poll_write(Pin::new(&mut self.stream), cx, &self.pending_write) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Ready(Ok(0)) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        ErrorKind::WriteZero,
+                        "the encrypted stream's socket accepted no bytes",
+                    )));
+                },
+                Poll::Ready(Ok(n)) => self.pending_write.advance(n),
+            }
+        }
+
+        Poll::Ready(Ok(()))
+    }
+}
+
 impl AsyncWrite for EncryptedStream {
-    #[allow(unused_must_use)]
+    /// FORK: encrypt into an owned buffer, and never lose ciphertext to a partial write.
+    ///
+    /// The original discarded the result of every underlying `poll_write` (the function carried
+    /// `#[allow(unused_must_use)]`), then returned `Ok(buf.len())` regardless. A `Pending` or a
+    /// short write therefore dropped bytes that had **already advanced `encrypt_count`**, and
+    /// since the nonce is that counter, every later frame decrypted to garbage on the controller.
+    ///
+    /// Small responses hid this completely: pair-setup and pair-verify TLVs are a few hundred
+    /// bytes, so they are one frame and one socket write that always succeeds. `GET /accessories`
+    /// is the first response big enough to span several frames, and a controller that cannot
+    /// decrypt it drops the connection -- which is what "reads the database once and never comes
+    /// back" looked like from this side.
+    ///
+    /// Ciphertext now goes into `pending_write`, which this owns, so reporting `buf` as fully
+    /// consumed is honest: what is left is drained here, by `poll_flush`, or by `poll_shutdown`.
+    /// `buf` is only encrypted once `pending_write` is empty, so a `Pending` return can never
+    /// cause the same plaintext to be encrypted twice.
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<std::result::Result<usize, Error>> {
         let encrypted_stream = Pin::into_inner(self);
 
         if let Some(shared_secret) = encrypted_stream.shared_secret {
-            let mut write_buf = BytesMut::from(buf);
-
-            while write_buf.len() > 1024 {
-                let (aad, chunk, auth_tag) =
-                    encrypt_chunk(&shared_secret, &write_buf[..1024], &mut encrypted_stream.encrypt_count)
-                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failed"))?;
-
-                let data = [&aad[..], &chunk[..], &auth_tag[..]].concat();
-                AsyncWrite::poll_write(Pin::new(&mut encrypted_stream.stream), cx, &data)?;
-
-                write_buf.advance(1024);
+            match encrypted_stream.drain_pending_write(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Ready(Ok(())) => {},
             }
 
-            let (aad, chunk, auth_tag) = encrypt_chunk(&shared_secret, &write_buf, &mut encrypted_stream.encrypt_count)
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failed"))?;
+            let mut write_buf = &buf[..];
 
-            let data = [&aad[..], &chunk[..], &auth_tag[..]].concat();
-            AsyncWrite::poll_write(Pin::new(&mut encrypted_stream.stream), cx, &data)?;
+            // HAP frames plaintext in chunks of at most 1024 bytes, each with its own length
+            // prefix as additional authenticated data and its own 16-byte tag.
+            while !write_buf.is_empty() {
+                let take = min(write_buf.len(), 1024);
+
+                let (aad, chunk, auth_tag) =
+                    encrypt_chunk(&shared_secret, &write_buf[..take], &mut encrypted_stream.encrypt_count)
+                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failed"))?;
+
+                encrypted_stream.pending_write.extend_from_slice(&aad);
+                encrypted_stream.pending_write.extend_from_slice(&chunk);
+                encrypted_stream.pending_write.extend_from_slice(&auth_tag);
+
+                write_buf = &write_buf[take..];
+            }
+
+            // Whatever the socket will not take right now stays buffered for the next poll.
+            if let Poll::Ready(Err(e)) = encrypted_stream.drain_pending_write(cx) {
+                return Poll::Ready(Err(e));
+            }
 
             Poll::Ready(Ok(buf.len()))
         } else {
@@ -479,11 +556,27 @@ impl AsyncWrite for EncryptedStream {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<std::result::Result<(), Error>> {
         let encrypted_stream = Pin::into_inner(self);
+
+        // FORK: buffered ciphertext has to reach the socket before the flush means anything.
+        match encrypted_stream.drain_pending_write(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+            Poll::Ready(Ok(())) => {},
+        }
+
         AsyncWrite::poll_flush(Pin::new(&mut encrypted_stream.stream), cx)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<std::result::Result<(), Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<std::result::Result<(), Error>> {
+        let encrypted_stream = Pin::into_inner(self);
+
+        // FORK: drain before closing, so a final response is not truncated. The inner stream is
+        // deliberately left un-shut-down, as before -- the server relies on HTTP/1 half-close.
+        match encrypted_stream.drain_pending_write(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+        }
     }
 }
 
