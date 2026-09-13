@@ -49,21 +49,34 @@ pub fn decode(tlv: &[u8]) -> HashMap<u8, Vec<u8>> {
     let mut p = 0;
     let mut pt = 0;
     while p < tlv.len() {
-        let t = tlv[p];
-        let l = tlv[p + 1];
+        // FORK: bounds-checked. This was `tlv[p + 1]` and `&tlv[p + 2..p + 2 + l]` with no
+        // checks at all, so a TLV whose declared length ran past the end of the buffer panicked
+        // -- and `decode` parses **unauthenticated** pair-setup bodies, which makes a truncated
+        // or hostile request a remote crash of the whole accessory.
+        //
+        // A malformed tail is dropped rather than guessed at: whatever the sender meant, we
+        // cannot know it, and inventing a value is worse than returning what parsed cleanly.
+        let Some(&t) = tlv.get(p) else { break };
+        let Some(&l) = tlv.get(p + 1) else { break };
+
+        let start = p + 2;
+        let Some(end) = start.checked_add(l as usize).filter(|e| *e <= tlv.len()) else {
+            break;
+        };
+
         if l < 255 {
             if t != pt && !buf.is_empty() {
                 hm.insert(t, buf.clone());
                 buf.clear();
             }
-            buf.extend_from_slice(&tlv[p + 2..p + 2 + l as usize]);
+            buf.extend_from_slice(&tlv[start..end]);
             hm.insert(t, buf.clone());
             buf.clear();
         } else {
-            buf.extend_from_slice(&tlv[p + 2..p + 2 + l as usize]);
+            buf.extend_from_slice(&tlv[start..end]);
         }
         pt = t;
-        p = p + 2 + l as usize;
+        p = end;
     }
     if !buf.is_empty() {
         hm.insert(pt, buf.clone());
@@ -271,4 +284,54 @@ impl ErrorContainer {
 
 impl Encodable for ErrorContainer {
     fn encode(self) -> Vec<u8> { vec![Value::State(self.step), Value::Error(self.error)].encode() }
+}
+
+// FORK: this crate ships no tests for `decode`, and `decode` parses unauthenticated pair-setup
+// bodies. These exist because the original panicked on a truncated TLV.
+#[cfg(test)]
+mod fork_tests {
+    use super::*;
+
+    /// The original indexed `tlv[p + 1]` and sliced `p + 2 .. p + 2 + l` unchecked, so any
+    /// declared length running past the buffer aborted the process. Sweep every length byte
+    /// against every truncation of a short buffer; none may panic.
+    #[test]
+    fn no_length_byte_can_index_out_of_bounds() {
+        for len in 0u16..=255 {
+            for tail in 0..8usize {
+                let mut buf = vec![0x01u8, len as u8];
+                buf.extend(std::iter::repeat(0xAB).take(tail));
+
+                // Must not panic. The value is irrelevant; surviving is the assertion.
+                let _ = decode(&buf);
+            }
+        }
+    }
+
+    /// Nothing but a type byte, and nothing at all, are both reachable from the network.
+    #[test]
+    fn truncated_and_empty_inputs_are_handled() {
+        assert!(decode(&[]).is_empty());
+        assert!(decode(&[0x01]).is_empty(), "type byte with no length");
+        assert!(decode(&[0x01, 0x05]).is_empty(), "length exceeds the buffer");
+    }
+
+    /// The happy path still works after the bounds checks.
+    #[test]
+    fn round_trips_a_well_formed_tlv() {
+        let encoded = encode(vec![(0x01, vec![0xAA; 3]), (0x02, vec![0xBB])]);
+        let decoded = decode(&encoded);
+
+        assert_eq!(decoded[&0x01], vec![0xAA; 3]);
+        assert_eq!(decoded[&0x02], vec![0xBB]);
+    }
+
+    /// Values longer than 255 bytes are split into same-type fragments and must rejoin.
+    #[test]
+    fn reassembles_fragmented_values() {
+        let long = vec![0xCD; 600];
+        let decoded = decode(&encode(vec![(0x09, long.clone())]));
+
+        assert_eq!(decoded[&0x09], long, "fragments must be rejoined in order");
+    }
 }
