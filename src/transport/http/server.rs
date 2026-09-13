@@ -4,7 +4,7 @@ use futures::{
     lock::Mutex,
 };
 use hyper::{server::conn::Http, service::Service, Body, Method, Request, Response, StatusCode};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::{
     net::SocketAddr,
     pin::Pin,
@@ -26,6 +26,7 @@ use crate::{
                 pair_setup::PairSetup,
                 pair_verify::PairVerify,
                 pairings::Pairings,
+                resource,
                 HandlerExt,
                 JsonHandler,
                 TlvHandler,
@@ -56,6 +57,8 @@ struct Api {
     storage: pointer::Storage,
     accessory_database: pointer::AccessoryDatabase,
     event_emitter: pointer::EventEmitter,
+    // FORK: supplies stills for `POST /resource`.
+    snapshot: pointer::SnapshotProvider,
     handlers: Handlers,
 }
 
@@ -67,6 +70,7 @@ impl Api {
         storage: pointer::Storage,
         accessory_database: pointer::AccessoryDatabase,
         event_emitter: pointer::EventEmitter,
+        snapshot: pointer::SnapshotProvider,
         session_sender: oneshot::Sender<Session>,
     ) -> Self {
         Api {
@@ -76,6 +80,7 @@ impl Api {
             storage,
             accessory_database,
             event_emitter,
+            snapshot,
             handlers: Handlers {
                 pair_setup: Arc::new(Mutex::new(Box::new(TlvHandler::from(PairSetup::new())))),
                 pair_verify: Arc::new(Mutex::new(Box::new(TlvHandler::from(PairVerify::new(session_sender))))),
@@ -103,6 +108,12 @@ impl Service<Request<Body>> for Api {
         let method = parts.method;
         let uri = parts.uri;
 
+        // FORK: kept for the unrouted-request log below, which needs the method after the match.
+        let logged_method = method.clone();
+        let logged_path = uri.path().to_string();
+
+        let is_snapshot_request = logged_method == Method::POST && logged_path == "/resource";
+
         let mut handler: Option<Arc<Mutex<Box<dyn HandlerExt + Send + Sync>>>> = match (method, uri.path()) {
             (Method::POST, "/pair-setup") => Some(self.handlers.pair_setup.clone()),
             (Method::POST, "/pair-verify") => Some(self.handlers.pair_verify.clone()),
@@ -120,6 +131,40 @@ impl Service<Request<Body>> for Api {
         let storage = self.storage.clone();
         let accessory_database = self.accessory_database.clone();
         let event_emitter = self.event_emitter.clone();
+        let snapshot = self.snapshot.clone();
+
+        // FORK: `POST /resource` is handled here rather than through `HandlerExt`, because it
+        // answers with `image/jpeg` -- neither the JSON nor the TLV8 handler shape fits, and
+        // routing it through either would mean widening a trait every handler implements.
+        if is_snapshot_request {
+            return async move {
+                let request = resource::parse(body).await;
+                let (width, height) = request.dimensions();
+
+                let image = {
+                    let provider = snapshot.read().expect("reading the snapshot provider");
+                    match provider.as_ref() {
+                        Some(provider) => provider(width, height),
+                        None => {
+                            warn!("a controller asked for a camera snapshot, but no provider is registered");
+                            return status_response(StatusCode::NOT_FOUND);
+                        },
+                    }
+                };
+
+                match image {
+                    Ok(image) => {
+                        debug!("serving a {}x{} snapshot, {} Bytes", width, height, image.len());
+                        resource::image_response(image)
+                    },
+                    Err(e) => {
+                        error!("could not produce a camera snapshot: {:?}", e);
+                        status_response(StatusCode::INTERNAL_SERVER_ERROR)
+                    },
+                }
+            }
+            .boxed();
+        }
 
         let fut = async move {
             match handler.take() {
@@ -138,7 +183,16 @@ impl Service<Request<Body>> for Api {
                             event_emitter,
                         )
                         .await,
-                None => future::ready(status_response(StatusCode::NOT_FOUND)).await,
+                // FORK: log what we refused.
+                //
+                // An unrouted request used to 404 in silence, which made a missing route
+                // indistinguishable from a controller that simply went quiet. `POST /resource`
+                // -- the camera snapshot every HomeKit camera serves, and which this crate does
+                // not implement -- lands here.
+                None => {
+                    log::warn!("no handler for {logged_method} {logged_path}");
+                    future::ready(status_response(StatusCode::NOT_FOUND)).await
+                },
             }
         }
         .boxed();
@@ -154,6 +208,8 @@ pub struct Server {
     accessory_database: pointer::AccessoryDatabase,
     event_emitter: pointer::EventEmitter,
     mdns_responder: pointer::MdnsResponder,
+    // FORK: shared with `IpServer`, so a provider registered after construction is still seen.
+    snapshot: pointer::SnapshotProvider,
 }
 
 impl Server {
@@ -163,6 +219,7 @@ impl Server {
         accessory_database: pointer::AccessoryDatabase,
         event_emitter: pointer::EventEmitter,
         mdns_responder: pointer::MdnsResponder,
+        snapshot: pointer::SnapshotProvider,
     ) -> Self {
         Server {
             config,
@@ -170,6 +227,7 @@ impl Server {
             accessory_database,
             event_emitter,
             mdns_responder,
+            snapshot,
         }
     }
 
@@ -179,6 +237,7 @@ impl Server {
         let accessory_database = self.accessory_database.clone();
         let event_emitter = self.event_emitter.clone();
         let mdns_responder = self.mdns_responder.clone();
+        let snapshot = self.snapshot.clone();
 
         async move {
             let config_lock = config.lock().await;
@@ -214,6 +273,7 @@ impl Server {
                     storage.clone(),
                     accessory_database.clone(),
                     event_emitter.clone(),
+                    snapshot.clone(),
                     session_sender,
                 );
 

@@ -13,7 +13,8 @@ use crate::{
     Result,
 };
 
-mod handler;
+// FORK: `pub(crate)` so `pointer::SnapshotProvider` can name `handler::resource::SnapshotFn`.
+pub(crate) mod handler;
 
 pub(crate) mod server;
 
@@ -90,6 +91,18 @@ pub struct WriteObject {
     #[serde(rename = "authData")]
     pub auth_data: Option<String>,
     pub remote: Option<bool>,
+    /// FORK: the HAP **write-response** flag.
+    ///
+    /// Spelled `r` on the wire -- HAP-NodeJS reads `data.r` (`Accessory.js:1645`). It was missing
+    /// entirely, so a controller asking for a write response was never noticed.
+    ///
+    /// This is what `SetupEndpoints` depends on: iOS writes its address and SRTP keys with
+    /// `r: true` and expects the accessory's address, keys and SSRCs **in the response to that
+    /// write**. Getting back a bare status leaves it with nowhere to send RTP, and it ends the
+    /// session immediately -- a camera that pairs, shows a snapshot, and fails the moment you
+    /// tap it.
+    #[serde(rename = "r")]
+    pub write_response: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -97,6 +110,9 @@ pub struct WriteResponseObject {
     pub iid: u64,
     pub aid: u64,
     pub status: i32,
+    /// FORK: present only for a write that asked for a response. See [`WriteObject::write_response`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]

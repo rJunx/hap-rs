@@ -27,6 +27,8 @@ pub struct IpServer {
     http_server: HttpServer,
     mdns_responder: pointer::MdnsResponder,
     aid_cache: Arc<Mutex<Vec<u64>>>,
+    /// FORK: see [`IpServer::set_snapshot_provider`].
+    snapshot: pointer::SnapshotProvider,
 }
 
 impl IpServer {
@@ -180,12 +182,17 @@ impl IpServer {
         let event_emitter = Arc::new(Mutex::new(event_emitter));
         let accessory_database = Arc::new(Mutex::new(AccessoryDatabase::new(event_emitter.clone())));
 
+        // FORK: created here and shared with the HTTP server, so `set_snapshot_provider` can be
+        // called after construction and still be seen by connections accepted later.
+        let snapshot: pointer::SnapshotProvider = Arc::new(std::sync::RwLock::new(None));
+
         let http_server = HttpServer::new(
             config.clone(),
             storage.clone(),
             accessory_database.clone(),
             event_emitter,
             mdns_responder.clone(),
+            snapshot.clone(),
         );
 
         let mut storage_lock = storage.lock().await;
@@ -207,9 +214,26 @@ impl IpServer {
             http_server,
             mdns_responder,
             aid_cache,
+            snapshot,
         };
 
         Ok(server)
+    }
+
+    /// FORK: register the source of camera stills for `POST /resource`.
+    ///
+    /// Every HomeKit camera must serve a snapshot: iOS asks for one as soon as it has read the
+    /// accessory database, and draws the camera tile from it. Without this the route 404s and
+    /// Apple Home shows the camera as **"No Response"**, with everything else -- pairing,
+    /// `/accessories`, the stream configuration -- entirely correct.
+    ///
+    /// The closure receives the size iOS asked for. It is a hint: controllers scale what they get,
+    /// and returning one fixed-size still is normal.
+    pub fn set_snapshot_provider<F>(&self, provider: F)
+    where
+        F: Fn(u16, u16) -> Result<Vec<u8>> + Send + Sync + 'static,
+    {
+        *self.snapshot.write().expect("setting the snapshot provider") = Some(Box::new(provider));
     }
 }
 

@@ -168,6 +168,7 @@ impl JsonHandlerExt for UpdateCharacteristics {
                             iid,
                             aid,
                             status: Status::ServiceCommunicationFailure as i32,
+                            value: None,
                         }
                     },
                 };
@@ -175,12 +176,22 @@ impl JsonHandlerExt for UpdateCharacteristics {
                 resp_body.characteristics.push(res_object);
             }
 
+            // FORK: a write that asked for a response must get one.
+            //
+            // Success used to be an unconditional `204 No Content`, which discards the write
+            // response even once it has been computed. HAP requires `200 OK` with the
+            // characteristics body whenever any of them carries a value.
+            let has_write_response = resp_body.characteristics.iter().any(|c| c.value.is_some());
+
             if all_err {
                 let res = serde_json::to_vec(&resp_body)?;
                 json_response(res, StatusCode::BAD_REQUEST)
             } else if some_err {
                 let res = serde_json::to_vec(&resp_body)?;
                 json_response(res, StatusCode::MULTI_STATUS)
+            } else if has_write_response {
+                let res = serde_json::to_vec(&resp_body)?;
+                json_response(res, StatusCode::OK)
             } else {
                 status_response(StatusCode::NO_CONTENT)
             }

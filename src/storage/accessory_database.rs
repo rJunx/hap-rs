@@ -138,7 +138,11 @@ impl AccessoryDatabase {
             aid: write_object.aid,
             iid: write_object.iid,
             status: 0,
+            value: None,
         };
+
+        // FORK: see `WriteObject::write_response`.
+        let wants_write_response = write_object.write_response == Some(true);
 
         'l: for accessory in self.accessories.iter_mut() {
             let mut a = accessory.lock().await;
@@ -169,6 +173,25 @@ impl AccessoryDatabase {
                             if let Some(value) = write_object.value {
                                 if characteristic_perms.contains(&Perm::PairedWrite) {
                                     characteristic.set_value(value).await?;
+
+                                    // FORK: answer in the response to the write itself.
+                                    //
+                                    // `get_value` runs the read callbacks, which is how the
+                                    // accessory's reply is produced -- for `SetupEndpoints` the
+                                    // write computes the answer and the read serves it.
+                                    if wants_write_response {
+                                        let value = characteristic.get_value().await?;
+                                        debug!(
+                                            "write response for {}.{}: {}",
+                                            write_object.aid, write_object.iid, value
+                                        );
+                                        result_object.value = Some(value);
+                                    } else {
+                                        debug!(
+                                            "write to {}.{} did not request a response",
+                                            write_object.aid, write_object.iid
+                                        );
+                                    }
                                 } else {
                                     result_object.status = Status::ReadOnlyCharacteristic as i32;
                                 }

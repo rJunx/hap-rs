@@ -19,3 +19,9 @@ pub type Storage = Arc<Mutex<Box<dyn storage::Storage>>>;
 pub type Config = Arc<Mutex<crate::Config>>;
 
 pub type MdnsResponder = Arc<Mutex<crate::transport::mdns::MdnsResponder>>;
+
+/// FORK: the consumer-supplied source of camera stills for `POST /resource`.
+///
+/// A `std` lock rather than the async one used above: the provider is a plain synchronous
+/// closure, so there is nothing to await and no lock held across a suspension point.
+pub type SnapshotProvider = Arc<RwLock<Option<crate::transport::http::handler::resource::SnapshotFn>>>;

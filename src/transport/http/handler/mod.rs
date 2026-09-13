@@ -15,6 +15,8 @@ pub mod identify;
 pub mod pair_setup;
 pub mod pair_verify;
 pub mod pairings;
+/// FORK: the camera snapshot route, absent from this crate entirely.
+pub mod resource;
 
 pub trait HandlerExt {
     fn handle(
