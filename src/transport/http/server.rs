@@ -31,6 +31,7 @@ use crate::{
                 JsonHandler,
                 TlvHandler,
             },
+            json_response,
             status_response,
             EventObject,
         },
@@ -113,6 +114,8 @@ impl Service<Request<Body>> for Api {
         let logged_path = uri.path().to_string();
 
         let is_snapshot_request = logged_method == Method::POST && logged_path == "/resource";
+        // FORK: HAP's timed-write preparation, absent from this crate entirely. See below.
+        let is_prepare_request = logged_method == Method::PUT && logged_path == "/prepare";
 
         let mut handler: Option<Arc<Mutex<Box<dyn HandlerExt + Send + Sync>>>> = match (method, uri.path()) {
             (Method::POST, "/pair-setup") => Some(self.handlers.pair_setup.clone()),
@@ -132,6 +135,50 @@ impl Service<Request<Body>> for Api {
         let accessory_database = self.accessory_database.clone();
         let event_emitter = self.event_emitter.clone();
         let snapshot = self.snapshot.clone();
+
+        // FORK: `PUT /prepare` -- the timed-write preparation request (HAP "Timed Write
+        // Procedures"). A controller sends `{"ttl": <ms>, "pid": <n>}` and expects
+        // `{"status": 0}`; the write that follows is then executed only if it arrives inside the
+        // TTL.
+        //
+        // This crate has no such route, so it 404'd. That is not a quiet degradation: an Apple
+        // **home hub** issues this immediately after reading `/accessories`, and on a 404 it
+        // abandons the connection and starts over -- forever. The accessory is reachable, pairs,
+        // verifies and serves its database, and is still reported as "No Response" to anything
+        // going through the hub, which is every request from outside the home.
+        //
+        // The TTL is acknowledged but not yet enforced: a subsequent `PUT /characteristics`
+        // carrying a `pid` is executed regardless of timing. That is the permissive direction --
+        // it accepts writes a stricter accessory would reject, and never rejects a legitimate
+        // one. Enforcing it needs per-connection state this router does not currently carry.
+        if is_prepare_request {
+            return async move {
+                let bytes = hyper::body::to_bytes(body).await?;
+
+                // Responses mirror HAP-NodeJS `HAPServer.js:846-875` exactly: a missing body,
+                // an absent `pid` or `ttl`, or anything but PUT is `400` with
+                // `-70410` (INVALID_VALUE_IN_REQUEST); only a well-formed request gets `0`.
+                let request: serde_json::Value =
+                    serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+
+                // `pid` is a 64-bit identifier -- observed values exceed `i64::MAX`, so it is
+                // read as a JSON number rather than parsed into an integer type.
+                let pid = request.get("pid").and_then(|v| v.as_f64());
+                let ttl = request.get("ttl").and_then(|v| v.as_u64());
+
+                match (bytes.is_empty(), pid, ttl) {
+                    (false, Some(pid), Some(ttl)) if ttl > 0 => {
+                        debug!("timed write prepared: ttl={ttl} pid={pid}");
+                        json_response(br#"{"status":0}"#.to_vec(), StatusCode::OK)
+                    },
+                    _ => {
+                        warn!("malformed timed-write preparation: {request}");
+                        json_response(br#"{"status":-70410}"#.to_vec(), StatusCode::BAD_REQUEST)
+                    },
+                }
+            }
+            .boxed();
+        }
 
         // FORK: `POST /resource` is handled here rather than through `HandlerExt`, because it
         // answers with `image/jpeg` -- neither the JSON nor the TLV8 handler shape fits, and
