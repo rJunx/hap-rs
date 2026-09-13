@@ -27,17 +27,25 @@ use crate::{
 // TODO - re-check MaximumDataLength
 /// Third Party Camera Active characteristic.
 #[derive(Debug, Default, Serialize)]
-pub struct ThirdPartyCameraActiveCharacteristic(Characteristic<bool>);
+// FORK: `uint8`, not `bool`.
+//
+// HAP defines this characteristic as `uint8` with `validValues: [0, 1]` (HAP-NodeJS,
+// `CharacteristicDefinitions.js`). The code generator emitted `Format::Bool`, so the accessory
+// advertised `"format": "bool"` and sent `"value": true` where a controller expects `1`.
+//
+// This is not cosmetic. These characteristics are how a camera tells a controller it is usable
+// and that snapshots may be taken, and a home hub reads them before deciding to fetch one.
+pub struct ThirdPartyCameraActiveCharacteristic(Characteristic<u8>);
 
 impl ThirdPartyCameraActiveCharacteristic {
     /// Creates a new Third Party Camera Active characteristic.
     pub fn new(id: u64, accessory_id: u64) -> Self {
         #[allow(unused_mut)]
-        let mut c = Self(Characteristic::<bool> {
+        let mut c = Self(Characteristic::<u8> {
             id,
             accessory_id,
             hap_type: HapType::ThirdPartyCameraActive,
-            format: Format::Bool,
+            format: Format::UInt8,
             perms: vec![
 				Perm::Events,
 				Perm::PairedRead,
@@ -156,18 +164,18 @@ impl HapCharacteristicSetup for ThirdPartyCameraActiveCharacteristic {
     }
 }
 
-impl CharacteristicCallbacks<bool> for ThirdPartyCameraActiveCharacteristic {
-    fn on_read(&mut self, f: Option<impl OnReadFn<bool>>) { CharacteristicCallbacks::on_read(&mut self.0, f) }
+impl CharacteristicCallbacks<u8> for ThirdPartyCameraActiveCharacteristic {
+    fn on_read(&mut self, f: Option<impl OnReadFn<u8>>) { CharacteristicCallbacks::on_read(&mut self.0, f) }
 
-    fn on_update(&mut self, f: Option<impl OnUpdateFn<bool>>) { CharacteristicCallbacks::on_update(&mut self.0, f) }
+    fn on_update(&mut self, f: Option<impl OnUpdateFn<u8>>) { CharacteristicCallbacks::on_update(&mut self.0, f) }
 }
 
-impl AsyncCharacteristicCallbacks<bool> for ThirdPartyCameraActiveCharacteristic {
-    fn on_read_async(&mut self, f: Option<impl OnReadFuture<bool>>) {
+impl AsyncCharacteristicCallbacks<u8> for ThirdPartyCameraActiveCharacteristic {
+    fn on_read_async(&mut self, f: Option<impl OnReadFuture<u8>>) {
         AsyncCharacteristicCallbacks::on_read_async(&mut self.0, f)
     }
 
-    fn on_update_async(&mut self, f: Option<impl OnUpdateFuture<bool>>) {
+    fn on_update_async(&mut self, f: Option<impl OnUpdateFuture<u8>>) {
         AsyncCharacteristicCallbacks::on_update_async(&mut self.0, f)
     }
 }
