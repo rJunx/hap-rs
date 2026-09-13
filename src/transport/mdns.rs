@@ -13,8 +13,19 @@ pub struct MdnsResponder {
 
 impl MdnsResponder {
     /// Creates a new mDNS Responder.
+    ///
+    /// FORK: restricted to the configured host address.
+    ///
+    /// `libmdns` otherwise publishes an A record for **every** interface, and on a multi-homed
+    /// board that is actively harmful: a BeagleBone running its own access point advertises both
+    /// `192.168.3.9` (LAN) and `192.168.8.1` (SoftAp0) for one hostname. A controller picks one,
+    /// and when it picks the access-point address -- unroutable from the LAN -- it hangs and the
+    /// accessory shows as "No Response". Nothing in the log, because nothing ever connects.
     pub async fn new(config: pointer::Config) -> Self {
-        let (responder, task) = libmdns::Responder::with_default_handle().expect("creating mDNS responder");
+        let host = config.lock().await.host;
+
+        let (responder, task) = libmdns::Responder::with_default_handle_and_ip_list(vec![host])
+            .expect("creating mDNS responder");
 
         MdnsResponder {
             config,
@@ -38,9 +49,16 @@ impl MdnsResponder {
 
         drop(c);
 
-        self.service = Some(self.responder.register("_hap._tcp".into(), name, port, &[
-            &tr[0], &tr[1], &tr[2], &tr[3], &tr[4], &tr[5], &tr[6], &tr[7],
-        ]));
+        // FORK: was a hand-written `[&tr[0], ..., &tr[7]]`, which published only the first
+        // EIGHT records. Adding `sh` to `txt_records` made it nine, and the ninth was dropped
+        // silently -- the array grew, the literal did not, and nothing complained. Built from
+        // the slice now, so the two cannot drift apart again.
+        let txt: Vec<&str> = tr.iter().map(String::as_str).collect();
+
+        self.service = Some(
+            self.responder
+                .register("_hap._tcp".into(), name.as_str(), port, &txt),
+        );
 
         debug!("setting mDNS records: {:?}", &tr);
     }

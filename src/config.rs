@@ -68,6 +68,14 @@ pub struct Config {
     pub feature_flag: BonjourFeatureFlag, // Bonjour: ff
     /// Optional maximum number of paired controllers.
     pub max_peers: Option<usize>,
+    /// FORK: Setup ID -- four uppercase alphanumeric characters, e.g. `"7OSX"`.
+    ///
+    /// Pairs with [`Self::setup_hash`] and [`Self::setup_uri`]. iOS uses the hash to tell which
+    /// discovered accessory a scanned or typed setup code belongs to; without it the Home app
+    /// cannot bind the two together. Must persist across restarts, which it does -- `Config` is
+    /// serialised into the pairing store.
+    #[serde(default = "generate_setup_id")]
+    pub setup_id: String, // Bonjour: sh (hashed)
 }
 
 impl Config {
@@ -75,19 +83,111 @@ impl Config {
     pub fn redetermine_local_ip(&mut self) { self.host = get_local_ip(); }
 
     /// Derives mDNS TXT records from the `Config`.
-    pub(crate) fn txt_records(&self) -> [String; 8] {
+    pub(crate) fn txt_records(&self) -> [String; 9] {
         [
             format!("c#={}", self.configuration_number),
             format!("ff={}", self.feature_flag as u8),
-            format!("id={}", self.device_id.to_string()),
+            format!("id={}", self.device_id_string()),
             format!("md={}", self.name),
             format!("pv={}", self.protocol_version),
             format!("s#={}", self.state_number),
             format!("sf={}", self.status_flag as u8),
             format!("ci={}", self.category as u8),
-            // format!("sh={}", self.setup_hash as u8), setup hash seems to be still undocumented
+            // FORK: was commented out as "still undocumented". It is documented, it is
+            // `base64(SHA-512(setup_id || device_id)[..4])`, and leaving it out is why iOS
+            // cannot match a typed setup code to this accessory.
+            format!("sh={}", self.setup_hash()),
         ]
     }
+
+    /// FORK: the device id exactly as it goes on the wire, in `id=` **and** in the setup hash.
+    ///
+    /// One function rather than two call sites, because iOS recomputes the hash from the `id=`
+    /// it discovered: if these two ever disagreed by so much as letter case, pairing would fail
+    /// with nothing to show why. (`macaddr` renders `{:02X}`, so this is uppercase today --
+    /// which is what HAP wants -- but the point is that both sides move together.)
+    pub fn device_id_string(&self) -> String {
+        self.device_id.to_string()
+    }
+
+    /// FORK: the Bonjour `sh` value -- the first four bytes of `SHA-512(setup_id || device_id)`,
+    /// base64-encoded.
+    pub fn setup_hash(&self) -> String {
+        use sha2::{Digest, Sha512};
+
+        let mut hasher = Sha512::new();
+        hasher.update(self.setup_id.as_bytes());
+        hasher.update(self.device_id_string().as_bytes());
+
+        base64::encode(&hasher.finalize()[..4])
+    }
+
+    /// FORK: the `X-HM://` setup URI, which is what a HomeKit setup QR code encodes.
+    ///
+    /// Layout, most significant bit first, packed into 64 bits and rendered as nine base36
+    /// characters (zero-padded), then the four-character setup id:
+    ///
+    /// ```text
+    ///   reserved (4) | category (8) | flags (4) | setup code (27)
+    /// ```
+    ///
+    /// The flag set here is "supports IP" (bit 28 of the low word). The category's low bit is
+    /// carried separately in bit 31 of the low word, which looks odd but matches the reference
+    /// implementation byte for byte -- this value is parsed by iOS, so it follows HAP-NodeJS
+    /// rather than an independent reading of the spec.
+    pub fn setup_uri(&self) -> String {
+        let code: u64 = self
+            .pin
+            .to_string()
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .fold(0u64, |acc, c| acc * 10 + u64::from(c as u8 - b'0'));
+
+        let category = self.category as u64;
+
+        let mut low = code | (1 << 28); // supports IP
+        if category & 1 == 1 {
+            low |= 1 << 31;
+        }
+
+        let value = ((category >> 1) << 32) | low;
+
+        let mut encoded = to_base36(value);
+        while encoded.len() < 9 {
+            encoded.insert(0, '0');
+        }
+
+        format!("X-HM://{}{}", encoded, self.setup_id)
+    }
+}
+
+/// FORK: uppercase base36, most significant digit first.
+fn to_base36(mut value: u64) -> String {
+    const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    if value == 0 {
+        return "0".into();
+    }
+
+    let mut out = Vec::new();
+    while value > 0 {
+        out.push(DIGITS[(value % 36) as usize]);
+        value /= 36;
+    }
+    out.reverse();
+
+    String::from_utf8(out).expect("base36 digits are ASCII")
+}
+
+/// FORK: a random four-character uppercase-alphanumeric setup id.
+fn generate_setup_id() -> String {
+    const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    // rand 0.7's two-argument `gen_range`, matching this crate's pin.
+    let mut rng = OsRng {};
+    (0..4)
+        .map(|_| DIGITS[rng.gen_range(0, DIGITS.len())] as char)
+        .collect()
 }
 
 impl Default for Config {
@@ -106,6 +206,7 @@ impl Default for Config {
             status_flag: BonjourStatusFlag::NotPaired,
             feature_flag: BonjourFeatureFlag::Zero,
             max_peers: None,
+            setup_id: generate_setup_id(),
         }
     }
 }
@@ -124,8 +225,14 @@ fn generate_ed25519_keypair() -> Ed25519Keypair {
 }
 
 /// Returns the IP of the system's first non-loopback network interface or defaults to `127.0.0.1`.
+///
+/// FORK: was `get_if_addrs`, now `if_addrs`. The two crates each ship a `-sys` companion
+/// declaring `links = "ifaddrs"`, and cargo permits only one package per `links` value -- so
+/// depending on `get_if_addrs` while `libmdns` depends on `if-addrs` made this crate
+/// **unresolvable**, in every published version and on upstream `main`. `if-addrs` is
+/// `get_if_addrs`'s maintained successor and the call is identical.
 fn get_local_ip() -> IpAddr {
-    for iface in get_if_addrs::get_if_addrs().unwrap() {
+    for iface in if_addrs::get_if_addrs().unwrap() {
         if !iface.is_loopback() {
             return iface.ip();
         }

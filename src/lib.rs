@@ -17,8 +17,13 @@ mod event;
 mod hap_type;
 mod pin;
 mod pointer;
-mod tlv;
 mod transport;
+
+// FORK: was `mod tlv;`. A camera accessory must build the TLV8 payloads for
+// `SupportedVideoStreamConfiguration` and its siblings itself -- this crate defines the camera
+// service but leaves every one of those characteristics empty -- and there is no reason to
+// carry a second TLV8 encoder just to do that.
+pub mod tlv;
 
 /// Definitions of HomeKit accessories.
 pub mod accessory;

@@ -23,6 +23,9 @@ exclude = [
 [dependencies]
 aead = "0.4"
 async-trait = "0.1"
+# FORK: for the Bonjour `sh` setup hash. 0.13 for its free-function `encode`, matching the
+# era of the rest of these pins.
+base64 = "0.13"
 byteorder = "1.3"
 bytes = "1.0"
 chacha20poly1305 = "0.8"
@@ -30,10 +33,20 @@ ed25519-dalek = { version = "1.0", features = ["std", "serde"] }
 erased-serde = "0.3"
 macaddr = { version = "1.0.1", features = ["serde"] }
 futures = "0.3"
-get_if_addrs = "0.5"
+# FORK: was `get_if_addrs = "0.5"`. Its `get_if_addrs-sys`, and the `if-addrs-sys` that `libmdns`
+# pulls in, both declare `links = "ifaddrs"` -- and cargo permits only one package per `links`
+# value. That made this crate unresolvable as published, in every version and on upstream `main`.
+# `if-addrs` is the maintained successor; the single call site in src/config.rs is identical.
+#
+# 0.15 specifically, because modern `if-addrs` is pure Rust and ships NO `-sys` crate -- so it
+# declares no `links` at all, and the `if-addrs-sys 0.2` that `libmdns` still drags in is then
+# the only claimant of `ifaddrs`. Same version rs-home-matter uses.
+if-addrs = "0.15"
 hkdf = "0.11"
 hyper = { version = "0.14", features = ["server", "http1"] }
-libmdns = "0.6"
+# FORK: 0.6 -> 0.10 for `with_default_handle_and_ip_list`, which restricts the published A
+# records to one address. See src/transport/mdns.rs.
+libmdns = "0.10"
 log = "0.4"
 num = "0.2"
 rand = "0.7"
