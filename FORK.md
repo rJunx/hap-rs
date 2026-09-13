@@ -1,8 +1,7 @@
 # Fork notes
 
-A fork of [`ewilken/hap-rs`](https://github.com/ewilken/hap-rs), carried by
-[`rs-hap-camera`](../rs-hap-camera) because upstream is unmaintained (newest release is a
-pre-release, `0.1.0-pre.15`) **and does not build**.
+A fork of [`ewilken/hap-rs`](https://github.com/ewilken/hap-rs), carried because upstream is
+unmaintained (newest release is a pre-release, `0.1.0-pre.15`) **and does not build**.
 
 Every change is marked `FORK:` in the source. This file is the index and the reasoning.
 
@@ -86,17 +85,17 @@ Found by a test written as a formality, not by reading the code.
 
 **`src/transport/mdns.rs`**, `libmdns 0.6 → 0.10`
 
-`libmdns` publishes an A record for **every** interface. On a multi-homed board that is actively
-harmful — a BeagleBone running its own access point advertised one hostname as two addresses:
+`libmdns` publishes an A record for **every** interface. On a multi-homed host that is actively
+harmful — a machine that also runs an access point advertises one hostname as two addresses:
 
 ```
-home-matter-bbbw.local. → 192.168.3.9     LAN
-home-matter-bbbw.local. → 192.168.8.1     SoftAp0, unroutable from the LAN
+accessory.local. → 10.0.0.20     LAN
+accessory.local. → 192.168.8.1   access point, unroutable from the LAN
 ```
 
-A controller picks one. When it picked the access-point address it hung, and Home showed **"No
+A controller picks one. When it picks the access-point address it hangs, and Home shows **"No
 Response"** — with *nothing in the accessory's log*, because nothing ever connected. That absence
-of evidence is what made it look like a HAP-layer problem for hours.
+of evidence is what makes it look like a HAP-layer problem.
 
 Fixed with `with_default_handle_and_ip_list`, added in `libmdns` 0.10, pinned to the configured
 host address.
@@ -117,7 +116,7 @@ missing snapshot route was not the cause of anything, and no time was spent buil
 
 ## 8. `c#` never changed when the accessory database changed
 
-**`src/server/ip.rs` (the defect), worked around in `rs-hap-camera/src/main.rs`**
+**`src/server/ip.rs`** — the defect; currently worked around in the consumer.
 
 `configuration_number` is incremented **only** in `add_accessory` / `remove_accessory`, and only
 for an `aid` not already in the aid cache. Once `aid=1` was cached, `c#` froze forever — no
@@ -130,12 +129,12 @@ a controller has that its cached `/accessories` is stale.
 left `c#=2`, so iOS had no reason to re-read and kept serving a cached copy of a database that
 was, at the time, genuinely malformed. Fix after fix appeared to do nothing.
 
-Worked around in the consumer rather than the fork: `rs-hap-camera` hashes the serialised
-accessory and bumps `c#` when the hash changes. Upstream should do this itself.
+Worked around in the consumer rather than the fork, by hashing the serialised accessory and
+bumping `c#` when the hash changes. The library should do this itself.
 
 ## 9. `pv=1.0`
 
-**`src/config.rs`** (default), overridden in `rs-hap-camera`.
+**`src/config.rs`** — the default; currently overridden by the consumer.
 
 `Config::default` advertises protocol version `1.0`. Every working HAP accessory observed on a
 real LAN — two Homebridge instances, i.e. HAP-NodeJS — advertises **`1.1`**. `1.0` is the
@@ -201,20 +200,81 @@ neither the JSON nor the TLV8 handler shape fits, and routing it through either 
 a trait every handler implements. The consumer supplies frames via
 `IpServer::set_snapshot_provider`.
 
+## 14. Camera Operating Mode characteristics were `bool`, not `uint8`
+
+**`src/characteristic/generated/{homekit_camera_active,event_snapshots_active,
+periodic_snapshots_active,third_party_camera_active}.rs`**
+
+HAP defines all four as `uint8` with `validValues: [0, 1]`. The code generator emitted
+`Format::Bool`, so an accessory advertised `"format": "bool"` and sent `"value": true` where a
+controller expects `1`.
+
+Not cosmetic: these are how a camera tells a controller it is usable and that snapshots may be
+taken, and a **home hub reads them before deciding to fetch one**.
+
+Caught by a test comparing the serialised values against a working camera, before any controller
+saw them.
+
+## 15. An unknown controller was refused with the wrong error
+
+**`src/transport/http/handler/pair_verify.rs`** — the most consequential fix in this file.
+
+`load_pairing` returns `io::ErrorKind::NotFound` when a controller has no pairing on this
+accessory, and `?` converted that through `From<io::Error>` into **`kTLVError_Unknown` (0x01)**,
+documented in this crate as *"generic error to handle unexpected errors"*.
+
+HAP's answer for an unrecognised controller is **`kTLVError_Authentication` (0x02)**. The
+signature check twenty lines below already returned that for the *other* way verification can
+fail; only the unknown-controller path was wrong.
+
+The difference decides behaviour. `Unknown` means *something went wrong, try again*, so a
+controller that is simply not paired retries forever. `Authentication` is a refusal, and a
+controller that receives it falls back to credentials that do work.
+
+**Observed:** an Apple home hub attempted pair-verify under its own identity every few seconds
+for twelve hours, filling the log with `Io(NotFound)`, never falling back — so every request
+routed through the hub failed, and the accessory showed "No Response" to anything outside the
+home while working perfectly on the local network. With the correct error it switched to the
+admin controller's identity on the next attempt and authenticated immediately.
+
+## 16. `PUT /prepare` did not exist
+
+**`src/transport/http/server.rs`**
+
+HAP's timed-write preparation. A controller sends `{"ttl": <ms>, "pid": <n>}` and expects
+`{"status": 0}`; the write that follows is executed only within that TTL.
+
+The route was absent, so it 404'd — and an Apple **home hub issues it immediately after reading
+`/accessories`**. On a 404 it abandons the connection and reconnects, indefinitely: roughly ten
+full pair-verify cycles per second, none of which accomplish anything.
+
+Responses mirror HAP-NodeJS `HAPServer.js:846-875`: empty body, missing `pid` or `ttl`, or any
+method but PUT is `400` with `-70410` (`INVALID_VALUE_IN_REQUEST`); only a well-formed request
+gets `0`.
+
+> Note `pid` is a 64-bit identifier and real values exceed `i64::MAX` (`4953017753974871000` and
+> `17325996466601334224` were both observed). Parsing it as a signed integer turns valid requests
+> into rejections.
+
+**Partial:** the TTL is acknowledged but not enforced — a later `PUT /characteristics` carrying a
+`pid` is executed regardless of timing. That is the permissive direction: it accepts writes a
+stricter accessory would reject, and never rejects a legitimate one. Enforcing it needs
+per-connection state this router does not currently carry.
+
 ---
 
 ## Known-missing, not yet fixed
 
-* **No media plane.** No SRTP, no RTP transmission, nothing that sends a frame. `rs-hap-camera`
-  implements its own (`h264.rs`, `sender.rs`) on top of `webrtc-srtp`, and that is arguably where
-  it belongs — a HAP library need not own an encoder pipeline.
-* **No camera accessory type.** `accessory/defined/` stops at lightbulbs, locks and televisions;
-  `rs-hap-camera` supplies its own.
+* **No media plane.** No SRTP, no RTP transmission, nothing that sends a frame. A consumer must
+  supply its own on top of something like `webrtc-srtp`, and that is arguably where it belongs —
+  a HAP library need not own an encoder pipeline.
+* **No camera accessory type.** `accessory/defined/` stops at lightbulbs, locks and televisions,
+  so a camera consumer has to supply its own.
 * **The read path stalls if a single read delivers more than one frame.** Fixed for the common
   case (§ the `>=` change in `tcp.rs`), but `read_stream` still parses at most one frame per wake
   and relies on a later poll for the remainder. Not observed in practice.
 * **`FileStorage::list_pairings` is path-fragile.** `list_files` returns absolute paths, and
   `read_bytes` pushes them onto the storage directory. `PathBuf::push` replaces on an absolute
   path, so it works — but only because the storage directory is absolute. A **relative** storage
-  dir yields `data/data/pairings/x.json` and fails. Not hit in production (the systemd unit uses
-  `/var/lib/rs-hap-camera`), so left alone rather than fixed speculatively.
+  dir yields `data/data/pairings/x.json` and fails. Not hit when the storage directory is
+  absolute, which is the normal deployment, so left alone rather than fixed speculatively.

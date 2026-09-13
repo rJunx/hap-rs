@@ -16,11 +16,11 @@ impl MdnsResponder {
     ///
     /// FORK: restricted to the configured host address.
     ///
-    /// `libmdns` otherwise publishes an A record for **every** interface, and on a multi-homed
-    /// board that is actively harmful: a BeagleBone running its own access point advertises both
-    /// `192.168.3.9` (LAN) and `192.168.8.1` (SoftAp0) for one hostname. A controller picks one,
-    /// and when it picks the access-point address -- unroutable from the LAN -- it hangs and the
-    /// accessory shows as "No Response". Nothing in the log, because nothing ever connects.
+    /// `libmdns` otherwise publishes an A record for **every** interface, which is actively
+    /// harmful on a multi-homed host: a machine that also runs an access point advertises both
+    /// its LAN address and the access-point address under one hostname. A controller picks one,
+    /// and when it picks an address unroutable from its own network it hangs and the accessory
+    /// shows as "No Response" -- with nothing in the log, because nothing ever connects.
     pub async fn new(config: pointer::Config) -> Self {
         let host = config.lock().await.host;
 
