@@ -217,10 +217,46 @@ where
             val = on_read_async().await.map_err(|e| Error::ValueOnRead(e))?;
         }
         if let Some(v) = val {
-            self.set_value(v).await?;
+            // FORK: a read must not run the *update* callbacks.
+            //
+            // This used to call `set_value`, which invokes `on_update`/`on_update_async` -- so a
+            // controller merely *reading* a characteristic was indistinguishable, to the
+            // accessory, from that controller *writing* the value it just read.
+            //
+            // For `SetupEndpoints` that is actively destructive: the read callback returns the
+            // accessory's own answer, whose TLV types (`0x01` session, `0x03` address, `0x04`/
+            // `0x05` SRTP parameters) are the same ones a request uses, so it parses as a
+            // perfectly valid new request and replaced the negotiated session with one addressed
+            // to the accessory itself.
+            self.set_value_from_read(v).await?;
         }
 
         Ok(self.value.clone())
+    }
+
+    /// FORK: store a value produced by a read callback.
+    ///
+    /// Same as [`set_value`](Characteristic::set_value) minus the update callbacks: the value did
+    /// not come from a controller, so nothing should react as though it did. Change events are
+    /// still emitted, since subscribers care that the value changed regardless of its origin.
+    async fn set_value_from_read(&mut self, val: T) -> Result<()> {
+        if self.event_notifications == Some(true) {
+            if let Some(ref event_emitter) = self.event_emitter {
+                event_emitter
+                    .lock()
+                    .await
+                    .emit(&Event::CharacteristicValueChanged {
+                        aid: self.accessory_id,
+                        iid: self.id,
+                        value: json!(&val),
+                    })
+                    .await;
+            }
+        }
+
+        self.value = val;
+
+        Ok(())
     }
 
     /// Sets the value of the characteristic.
@@ -361,6 +397,35 @@ where
     }
 }
 
+/// FORK: render a TLV8 characteristic value as the base64 string HAP expects.
+///
+/// Goes through `serde_json` because the value is generic: every TLV8 characteristic this crate
+/// generates is a `Characteristic<Vec<u8>>`, which lands here as a JSON array of byte-sized
+/// numbers. An empty or absent value becomes `""`, which is what an unset TLV8 characteristic
+/// looks like on the wire -- and is exactly the state Apple rejects a camera for, so it is a
+/// legal encoding rather than a silent substitution.
+fn tlv8_value_to_base64<T: Serialize, E: serde::ser::Error>(value: &T) -> std::result::Result<String, E> {
+    let json = serde_json::to_value(value).map_err(E::custom)?;
+
+    let bytes: Vec<u8> = match json {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .filter(|n| *n <= u8::MAX as u64)
+                    .map(|n| n as u8)
+                    .ok_or_else(|| E::custom("TLV8 value contained a non-byte element"))
+            })
+            .collect::<std::result::Result<_, _>>()?,
+        // Already a string: assume it is base64 and pass it through untouched.
+        serde_json::Value::String(s) => return Ok(s),
+        serde_json::Value::Null => Vec::new(),
+        other => return Err(E::custom(format!("TLV8 value was neither array nor string: {other}"))),
+    };
+
+    Ok(base64::encode(bytes))
+}
+
 impl<T: fmt::Debug + Default + Clone + Serialize + Send + Sync> Serialize for Characteristic<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct("Characteristic", 15)?;
@@ -376,7 +441,17 @@ impl<T: fmt::Debug + Default + Clone + Serialize + Send + Sync> Serialize for Ch
         }
 
         if self.perms.contains(&Perm::PairedRead) {
-            state.serialize_field("value", &self.value)?;
+            // FORK: TLV8 values go on the wire as **base64 strings**, not as JSON arrays.
+            //
+            // The generated TLV8 characteristics are `Characteristic<Vec<u8>>`, and a `Vec<u8>`
+            // serialises as `[1,2,3]` -- which a controller cannot parse. Nothing in this crate
+            // exercised that before, because it ships no accessory that populates a TLV8
+            // characteristic; the camera services are declared but left empty.
+            if self.format == Format::Tlv8 {
+                state.serialize_field("value", &tlv8_value_to_base64(&self.value)?)?;
+            } else {
+                state.serialize_field("value", &self.value)?;
+            }
         }
         if let Some(ref unit) = self.unit {
             state.serialize_field("unit", unit)?;
@@ -684,6 +759,19 @@ where
 
     async fn get_value(&mut self) -> Result<serde_json::Value> {
         let value = Characteristic::get_value(self).await?;
+
+        // FORK: the third place TLV8 has to become base64, and the one that was missed.
+        //
+        // `Serialize` encodes it for `/accessories` and `set_value` decodes it on the way in, but
+        // this method feeds `GET /characteristics` *and* the write response -- both of which were
+        // therefore emitting a JSON array like `[2,1,2]` for a `Characteristic<Vec<u8>>`. A
+        // controller cannot parse that, so the `SetupEndpoints` answer was unreadable even once
+        // it was correctly computed and correctly returned.
+        if self.format == Format::Tlv8 {
+            let bytes: Vec<u8> = serde_json::from_value(json!(value)).unwrap_or_default();
+            return Ok(json!(base64::encode(&bytes)));
+        }
+
         Ok(json!(value))
     }
 
@@ -699,6 +787,18 @@ where
             } else {
                 return Err(Error::InvalidValue(Characteristic::get_format(self)));
             }
+        } else if self.format == Format::Tlv8 && value.is_string() {
+            // FORK: the mirror of the TLV8 base64 encoding in `Serialize`.
+            //
+            // A controller writes a TLV8 characteristic -- `SetupEndpoints` is the one that
+            // matters for a camera -- as a base64 **string**, but the generated TLV8
+            // characteristics are `Characteristic<Vec<u8>>`, so `from_value` would reject it as
+            // `InvalidValue(Tlv8)`. Decode here so the write path and the read path agree.
+            let encoded = value.as_str().unwrap_or_default();
+            let bytes = base64::decode(encoded).map_err(|_| Error::InvalidValue(Format::Tlv8))?;
+
+            v = serde_json::from_value(json!(bytes))
+                .map_err(|_| Error::InvalidValue(Characteristic::get_format(self)))?;
         } else {
             v = serde_json::from_value(value).map_err(|_| Error::InvalidValue(Characteristic::get_format(self)))?;
         }
