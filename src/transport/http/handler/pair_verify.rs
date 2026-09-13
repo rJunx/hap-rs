@@ -5,7 +5,7 @@ use futures::{
     future::{BoxFuture, FutureExt},
 };
 use hyper::{body::Buf, Body};
-use log::{debug, info};
+use log::{debug, info, warn};
 use rand::rngs::OsRng;
 use signature::{Signer, Verifier};
 use std::str;
@@ -224,7 +224,30 @@ async fn handle_finish(
             let uuid_str = str::from_utf8(device_pairing_id)?;
             let pairing_uuid = Uuid::parse_str(uuid_str)?;
             debug!("device pairing UUID: {:?}", &pairing_uuid);
-            let pairing = storage.lock().await.load_pairing(&pairing_uuid).await?;
+            // FORK: an unknown controller is an **authentication** failure, not an unknown one.
+            //
+            // `load_pairing` returns `io::ErrorKind::NotFound` when the controller has no pairing
+            // on this accessory, and `?` converted that through `From<io::Error>` into
+            // `kTLVError_Unknown` (0x01) -- "generic error to handle unexpected errors".
+            //
+            // The distinction is not pedantic. `Unknown` tells a controller *something went
+            // wrong, try again*, so a controller that is simply not paired retries forever and
+            // never concludes that its identity was refused. `Authentication` (0x02) is the
+            // answer HAP defines for this case, and is what the signature check twenty lines
+            // below already returns for the *other* way verification can fail.
+            //
+            // Symptom: a home hub re-attempting pair-verify every few seconds indefinitely,
+            // filling the log with `Io(NotFound)`, and never falling back to credentials that
+            // would work.
+            let pairing = storage
+                .lock()
+                .await
+                .load_pairing(&pairing_uuid)
+                .await
+                .map_err(|_| {
+                    warn!("pair verify M3: no pairing for controller {pairing_uuid}; refusing");
+                    tlv::Error::Authentication
+                })?;
             debug!("loaded pairing: {:?}", &pairing);
 
             let mut device_info: Vec<u8> = Vec::new();
