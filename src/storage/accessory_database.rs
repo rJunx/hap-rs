@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use futures::lock::Mutex;
-use log::debug;
+use log::{debug, info};
 use serde_json::json;
 
 use crate::{
@@ -153,11 +153,14 @@ impl AccessoryDatabase {
                             let characteristic_perms = characteristic.get_perms();
                             if let Some(ev) = write_object.ev {
                                 if characteristic_perms.contains(&Perm::Events) {
-                                    // FORK: say so. A subscription is the difference between an
-                                    // accessory that can notify and one that changes a value
-                                    // nobody reads, and it was previously invisible at every log
-                                    // level -- only a *value* write was ever logged.
-                                    debug!(
+                                    // FORK: say so, at INFO. A subscription is the difference
+                                    // between an accessory that can notify and one that changes a
+                                    // value nobody reads, and it was previously invisible at every
+                                    // log level -- only a *value* write was ever logged. It fires
+                                    // only on subscribe/unsubscribe, so it costs nothing to keep,
+                                    // and without it a silent notification failure looks exactly
+                                    // like nothing having happened.
+                                    info!(
                                         "event subscription {} for {}.{}",
                                         if ev { "ADDED" } else { "REMOVED" },
                                         write_object.aid,

@@ -8,8 +8,10 @@ use log::{debug, error, info, warn};
 use std::{
     net::SocketAddr,
     pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 use tokio::net::TcpListener;
 
@@ -301,6 +303,35 @@ impl Server {
 
                 debug!("incoming TCP stream from {}", stream.peer_addr()?);
 
+                // FORK: keepalive, so a connection that dies is noticed.
+                //
+                // A controller subscribes to characteristic events and then says nothing for as
+                // long as nothing happens, which for a motion sensor is most of the time. If the
+                // connection dies in that silence -- the controller sleeps, wifi roams, a NAT
+                // table forgets it -- neither end finds out, because neither end sends anything.
+                // The accessory only discovers it at the moment it tries to deliver an event,
+                // which is to say it discovers it by losing exactly the event that mattered.
+                //
+                // Probing an idle connection keeps NAT state warm and turns a half-open socket
+                // into a closed one, which the controller does notice and does reconnect from.
+                // HAP-NodeJS sets keepalive on every accepted socket for the same reason.
+                {
+                    let keepalive = socket2::TcpKeepalive::new()
+                        .with_time(Duration::from_secs(20))
+                        .with_interval(Duration::from_secs(10));
+
+                    if let Err(e) = socket2::SockRef::from(&stream).set_tcp_keepalive(&keepalive) {
+                        // Not fatal: this is a connection that works and may go stale, which is
+                        // strictly better than no connection.
+                        warn!("could not set TCP keepalive on the incoming stream: {}", e);
+                    }
+
+                    // Events are small and latency-sensitive; there is nothing to coalesce.
+                    if let Err(e) = stream.set_nodelay(true) {
+                        warn!("could not set TCP_NODELAY on the incoming stream: {}", e);
+                    }
+                }
+
                 let (
                     encrypted_stream,
                     stream_incoming,
@@ -324,7 +355,12 @@ impl Server {
                     session_sender,
                 );
 
-                event_emitter.lock().await.add_listener(Box::new(move |event| {
+                // FORK: scoped to this connection, and cleared below when it ends. Previously
+                // every connection ever accepted kept its listener forever, and a dead one still
+                // matched its subscriptions and swallowed the event.
+                let alive = Arc::new(AtomicBool::new(true));
+
+                event_emitter.lock().await.add_scoped_listener(alive.clone(), Box::new(move |event| {
                     let event_subscriptions_ = event_subscriptions.clone();
                     let stream_outgoing_ = stream_outgoing.clone();
                     async move {
@@ -362,11 +398,23 @@ impl Server {
                 http.http1_keep_alive(true);
                 http.http1_preserve_header_case(true);
 
-                tokio::spawn(encrypted_stream.map_err(|e| error!("{:?}", e)).map(|_| ()));
+                // Either task finishing means this connection is over -- the encrypted stream ends
+                // on a read or write failure, the HTTP service ends when the peer closes -- and
+                // whichever gets there first retires the listener.
+                let alive_stream = alive.clone();
+                tokio::spawn(encrypted_stream.map_err(|e| error!("{:?}", e)).map(move |_| {
+                    debug!("encrypted stream ended; retiring its event listener");
+                    alive_stream.store(false, Ordering::Relaxed);
+                }));
+
+                let alive_http = alive;
                 tokio::spawn(
                     http.serve_connection(stream_wrapper, api)
                         .map_err(|e| error!("{:?}", e))
-                        .map(|_| ()),
+                        .map(move |_| {
+                            debug!("connection closed; retiring its event listener");
+                            alive_http.store(false, Ordering::Relaxed);
+                        }),
                 );
             }
 

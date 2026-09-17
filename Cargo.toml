@@ -44,6 +44,9 @@ futures = "0.3"
 if-addrs = "0.15"
 hkdf = "0.11"
 hyper = { version = "0.14", features = ["server", "http1"] }
+# FORK: to set TCP keepalive on accepted connections -- see src/transport/http/server.rs.
+# Already in the tree via hyper, so this costs no extra compilation.
+socket2 = "0.5"
 # FORK: 0.6 -> 0.10 for `with_default_handle_and_ip_list`, which restricts the published A
 # records to one address. See src/transport/mdns.rs.
 libmdns = "0.10"
