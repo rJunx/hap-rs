@@ -153,6 +153,16 @@ impl AccessoryDatabase {
                             let characteristic_perms = characteristic.get_perms();
                             if let Some(ev) = write_object.ev {
                                 if characteristic_perms.contains(&Perm::Events) {
+                                    // FORK: say so. A subscription is the difference between an
+                                    // accessory that can notify and one that changes a value
+                                    // nobody reads, and it was previously invisible at every log
+                                    // level -- only a *value* write was ever logged.
+                                    debug!(
+                                        "event subscription {} for {}.{}",
+                                        if ev { "ADDED" } else { "REMOVED" },
+                                        write_object.aid,
+                                        write_object.iid
+                                    );
                                     characteristic.set_event_notifications(Some(ev));
                                     let subscription = (write_object.aid, write_object.iid);
                                     let mut es = event_subscriptions.lock().await;
