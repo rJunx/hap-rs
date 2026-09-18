@@ -141,6 +141,11 @@ pub fn event_response(event_objects: Vec<EventObject>) -> Result<Vec<u8>> {
     let body = serde_json::to_string(&CharacteristicResponseBody {
         characteristics: event_objects,
     })?;
+    // NOTE: bare LF, matching upstream. HAP-NodeJS writes CRLF here and HTTP framing calls for
+    // it, so this looks like a bug -- it was investigated as one and it is not. Measured against
+    // a real controller: with LF, a motion event still reaches HomeKit and still triggers an
+    // automation. Left alone rather than "fixed" so the next reader does not spend the evening
+    // on it too.
     let response = format!(
         "EVENT/1.0 200 OK\nContent-Type: {}\nContent-Length: {}\n\n{}",
         ContentType::HapJson.to_string(),
