@@ -4,9 +4,9 @@ use futures::future::{BoxFuture, FutureExt};
 use hyper::{body::Buf, Body};
 use log::{debug, info};
 use num::BigUint;
-use rand::{rngs::OsRng, RngCore};
+use ed25519_dalek::{Signer, Verifier};
+use rand::{rand_core::UnwrapErr, rngs::SysRng, Rng};
 use sha2::{digest::Digest, Sha512};
-use signature::{Signer, Verifier};
 use srp::{
     client::{srp_private_key, SrpClient},
     groups::G_3072,
@@ -174,7 +174,7 @@ async fn handle_start(handler: &mut PairSetup, config: pointer::Config) -> Resul
     // kTLVType_State <M2>
     // kTLVType_Error <kTLVError_Busy>
 
-    let mut csprng = OsRng {};
+    let mut csprng = UnwrapErr(SysRng);
     let mut salt = [0; 16]; // s
     let mut b = [0; 64];
     csprng.fill_bytes(&mut salt);
@@ -276,10 +276,10 @@ async fn handle_exchange(
 
                 let sub_tlv = tlv::decode(&decrypted_data);
                 let device_pairing_id = sub_tlv.get(&(Type::Identifier as u8)).ok_or(tlv::Error::Unknown)?;
-                let device_ltpk = ed25519_dalek::PublicKey::from_bytes(
-                    sub_tlv.get(&(Type::PublicKey as u8)).ok_or(tlv::Error::Unknown)?,
+                let device_ltpk = ed25519_dalek::VerifyingKey::try_from(
+                    sub_tlv.get(&(Type::PublicKey as u8)).ok_or(tlv::Error::Unknown)?.as_slice(),
                 )?;
-                let device_signature = ed25519_dalek::Signature::from_bytes(
+                let device_signature = ed25519_dalek::Signature::from_slice(
                     sub_tlv.get(&(Type::Signature as u8)).ok_or(tlv::Error::Unknown)?,
                 )?;
 
@@ -326,12 +326,12 @@ async fn handle_exchange(
                 let mut accessory_info: Vec<u8> = Vec::new();
                 accessory_info.extend(&accessory_x);
                 accessory_info.extend(device_id.as_bytes());
-                accessory_info.extend(config.device_ed25519_keypair.public.as_bytes());
+                accessory_info.extend(config.device_ed25519_keypair.verifying_key().as_bytes());
                 let accessory_signature = config.device_ed25519_keypair.sign(&accessory_info);
 
                 let encoded_sub_tlv = vec![
                     Value::Identifier(device_id),
-                    Value::PublicKey(config.device_ed25519_keypair.public.as_bytes().to_vec()),
+                    Value::PublicKey(config.device_ed25519_keypair.verifying_key().to_bytes().to_vec()),
                     Value::Signature(accessory_signature.to_bytes().to_vec()),
                 ]
                 .encode();

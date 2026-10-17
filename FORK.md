@@ -276,6 +276,26 @@ as before, and the camera's accessory hash does not move. The template is fixed.
 files, only `television.rs` is patched by hand; the rest get the identical change on the next
 regeneration, and until then they link nothing anyway.
 
+## 18. Ed25519 / X25519 on dalek 3
+
+**`Cargo.toml`, `src/config.rs`, `src/lib.rs`, `src/transport/http/handler/pair_{setup,verify}.rs`,
+`src/transport/http/handler/pairings.rs`**
+
+`ed25519-dalek 1.0` and `x25519-dalek 0.6` carried three RustSec advisories (RUSTSEC-2022-0093,
+and RUSTSEC-2024-0344 on both `curve25519-dalek` 2 and 3 underneath them). Both move to 3, which
+sits on `rand_core 0.10` / `sha2 0.11` -- the generation rs-matter already pulls -- so `rand`
+moves 0.7 -> 0.10 with them and `signature` is dropped (dalek re-exports `Signer`/`Verifier`).
+`srp`, `hkdf`, `chacha20poly1305` and `sha2 0.9` are untouched: no advisories, and SRP is where
+pair-setup breaks.
+
+**This changes the stored identity.** `Config::device_ed25519_keypair` is serialized by dalek
+itself: 1.0 wrote the 64-byte keypair, 3 writes the 32-byte secret. An old config therefore fails
+to load, the apps fall back to a fresh `Config`, and every controller has to pair again. Accepted
+deliberately; a shim that kept the 64-byte form would avoid it.
+
+`OsRng {}` becomes `UnwrapErr(SysRng)`: still the OS RNG, panicking on failure as before.
+`Ed25519Keypair` remains the public name, now an alias for `SigningKey`.
+
 ---
 
 ## Known-missing, not yet fixed

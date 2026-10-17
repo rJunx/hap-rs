@@ -1,7 +1,7 @@
-use ed25519_dalek::Keypair as Ed25519Keypair;
+use ed25519_dalek::SigningKey as Ed25519Keypair;
 //use eui48::MacAddress;
 use macaddr::MacAddr6 as MacAddress;
-use rand::{rngs::OsRng, Rng};
+use rand::{rand_core::UnwrapErr, rngs::SysRng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -183,10 +183,9 @@ fn to_base36(mut value: u64) -> String {
 fn generate_setup_id() -> String {
     const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    // rand 0.7's two-argument `gen_range`, matching this crate's pin.
-    let mut rng = OsRng {};
+    let mut rng = UnwrapErr(SysRng);
     (0..4)
-        .map(|_| DIGITS[rng.gen_range(0, DIGITS.len())] as char)
+        .map(|_| DIGITS[rng.random_range(0..DIGITS.len())] as char)
         .collect()
 }
 
@@ -213,14 +212,14 @@ impl Default for Config {
 
 /// Generates a random MAC address.
 fn generate_random_mac_address() -> MacAddress {
-    let mut csprng = OsRng {};
-    let eui = csprng.gen::<[u8; 6]>();
+    let mut csprng = UnwrapErr(SysRng);
+    let eui = csprng.random::<[u8; 6]>();
     MacAddress::from(eui)
 }
 
 /// Generates an Ed25519 keypair.
 fn generate_ed25519_keypair() -> Ed25519Keypair {
-    let mut csprng = OsRng {};
+    let mut csprng = UnwrapErr(SysRng);
     Ed25519Keypair::generate(&mut csprng)
 }
 

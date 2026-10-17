@@ -29,7 +29,8 @@ base64 = "0.13"
 byteorder = "1.3"
 bytes = "1.0"
 chacha20poly1305 = "0.8"
-ed25519-dalek = { version = "1.0", features = ["std", "serde"] }
+# FORK: 1.0 -> 3, with x25519-dalek 0.6 -> 3 and rand 0.7 -> 0.10. See FORK.md #18.
+ed25519-dalek = { version = "3", features = ["rand_core", "serde"] }
 erased-serde = "0.3"
 macaddr = { version = "1.0.1", features = ["serde"] }
 futures = "0.3"
@@ -52,17 +53,16 @@ socket2 = "0.5"
 libmdns = "0.10"
 log = "0.4"
 num = "0.2"
-rand = "0.7"
+rand = "0.10"
 serde = { version = "1.0", features = ["rc", "derive"] }
 serde_json = "1.0"
 sha2 = "0.9"
-signature = "1.1"
 srp = "0.5"
 thiserror = "1.0"
 tokio = "1.8"
 url = "2.1"
 uuid = { version = "0.8", features = ["v4", "serde"] }
-x25519-dalek = "0.6"
+x25519-dalek = "3"
 
 [build-dependencies]
 handlebars = "2.0"
