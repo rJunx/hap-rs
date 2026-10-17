@@ -32,7 +32,9 @@ pub type SnapshotFn = Box<dyn Fn(u16, u16) -> Result<Vec<u8>> + Send + Sync>;
 /// `{"aid":1,"image-width":640,"image-height":360,"resource-type":"image"}`.
 #[derive(Debug, Deserialize)]
 pub struct SnapshotRequest {
+    // Always "image" in practice, and the only resource there is, so it is parsed and not checked.
     #[serde(rename = "resource-type")]
+    #[allow(dead_code)]
     pub resource_type: Option<String>,
     #[serde(rename = "image-width")]
     pub image_width: Option<u16>,

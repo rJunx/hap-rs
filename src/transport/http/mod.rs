@@ -88,8 +88,11 @@ pub struct WriteObject {
     pub aid: u64,
     pub ev: Option<bool>,
     pub value: Option<serde_json::Value>,
+    // Parsed because HAP sends them; nothing here acts on either yet.
     #[serde(rename = "authData")]
+    #[allow(dead_code)]
     pub auth_data: Option<String>,
+    #[allow(dead_code)]
     pub remote: Option<bool>,
     /// FORK: the HAP **write-response** flag.
     ///
