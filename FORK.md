@@ -261,6 +261,21 @@ gets `0`.
 stricter accessory would reject, and never rejects a legitimate one. Enforcing it needs
 per-connection state this router does not currently carry.
 
+## 17. Linked services were never serialized
+
+**`codegen/src/main.rs`, `src/service/generated/television.rs`**
+
+Every service carried `linked_services` and a setter for it, but the serializer stopped at
+`characteristics` with the note *"linked services left out for now"*. So `set_linked_services`
+did nothing a controller could see. A Television is where that matters: Apple Home finds its
+Input Sources and its TV Speaker **only** through the Television service's `linked` array. With
+nothing linked, there is no input picker and no volume on the Control Center remote.
+
+`linked` is written only when non-empty, so every service that links nothing serializes exactly
+as before, and the camera's accessory hash does not move. The template is fixed. Of the generated
+files, only `television.rs` is patched by hand; the rest get the identical change on the next
+regeneration, and until then they link nothing anyway.
+
 ---
 
 ## Known-missing, not yet fixed

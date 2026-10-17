@@ -1138,7 +1138,10 @@ impl Serialize for {{pascal_case service.DefaultDescription}}Service {
         state.serialize_field(\"hidden\", &self.get_hidden())?;
         state.serialize_field(\"primary\", &self.get_primary())?;
         state.serialize_field(\"characteristics\", &self.get_characteristics())?;
-        // linked services left out for now
+        // FORK: was \"linked services left out for now\". See FORK.md #17.
+        if !self.linked_services.is_empty() {
+            state.serialize_field(\"linked\", &self.linked_services)?;
+        }
         state.end()
     }
 }
