@@ -1,9 +1,9 @@
-use futures::future::{join_all, BoxFuture};
+use futures::future::{BoxFuture, join_all};
 use log::debug;
 use serde_json::Value;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -27,7 +27,9 @@ pub struct EventEmitter {
 }
 
 impl EventEmitter {
-    pub fn new() -> EventEmitter { EventEmitter { listeners: vec![] } }
+    pub fn new() -> EventEmitter {
+        EventEmitter { listeners: vec![] }
+    }
 
     /// Register a listener that lives as long as the server does.
     pub fn add_listener(&mut self, listener: Listener) {
@@ -62,7 +64,7 @@ impl EventEmitter {
             self.listeners
                 .iter()
                 .filter(|r| r.alive.load(Ordering::Relaxed))
-                .map(|r| (r.listener)(&event)),
+                .map(|r| (r.listener)(event)),
         )
         .await;
     }

@@ -3,14 +3,11 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-    service::HapService,
-    characteristic::{
-        HapCharacteristic,
-		active::ActiveCharacteristic,
-		identifier::IdentifierCharacteristic,
-		name::NameCharacteristic,
-	},
     HapType,
+    characteristic::{
+        HapCharacteristic, active::ActiveCharacteristic, identifier::IdentifierCharacteristic, name::NameCharacteristic,
+    },
+    service::HapService,
 };
 
 /// Assistant service.
@@ -27,13 +24,12 @@ pub struct AssistantService {
     /// An array of numbers containing the instance IDs of the services that this service links to.
     linked_services: Vec<u64>,
 
-	/// Active characteristic (required).
-	pub active: ActiveCharacteristic,
-	/// Identifier characteristic (required).
-	pub identifier: IdentifierCharacteristic,
-	/// Name characteristic (required).
-	pub name: NameCharacteristic,
-
+    /// Active characteristic (required).
+    pub active: ActiveCharacteristic,
+    /// Identifier characteristic (required).
+    pub identifier: IdentifierCharacteristic,
+    /// Name characteristic (required).
+    pub name: NameCharacteristic,
 }
 
 impl AssistantService {
@@ -42,10 +38,10 @@ impl AssistantService {
         Self {
             id,
             hap_type: HapType::Assistant,
-			active: ActiveCharacteristic::new(id + 1 + 0, accessory_id),
-			identifier: IdentifierCharacteristic::new(id + 1 + 1, accessory_id),
-			name: NameCharacteristic::new(id + 1 + 2, accessory_id),
-			..Default::default()
+            active: ActiveCharacteristic::new(id + 1 + 0, accessory_id),
+            identifier: IdentifierCharacteristic::new(id + 1 + 1, accessory_id),
+            name: NameCharacteristic::new(id + 1 + 2, accessory_id),
+            ..Default::default()
         }
     }
 }
@@ -111,22 +107,15 @@ impl HapService for AssistantService {
 
     fn get_characteristics(&self) -> Vec<&dyn HapCharacteristic> {
         #[allow(unused_mut)]
-        let mut characteristics: Vec<&dyn HapCharacteristic> = vec![
-			&self.active,
-			&self.identifier,
-			&self.name,
-		];
-		characteristics
+        let mut characteristics: Vec<&dyn HapCharacteristic> = vec![&self.active, &self.identifier, &self.name];
+        characteristics
     }
 
     fn get_mut_characteristics(&mut self) -> Vec<&mut dyn HapCharacteristic> {
         #[allow(unused_mut)]
-        let mut characteristics: Vec<&mut dyn HapCharacteristic> = vec![
-			&mut self.active,
-			&mut self.identifier,
-			&mut self.name,
-		];
-		characteristics
+        let mut characteristics: Vec<&mut dyn HapCharacteristic> =
+            vec![&mut self.active, &mut self.identifier, &mut self.name];
+        characteristics
     }
 }
 

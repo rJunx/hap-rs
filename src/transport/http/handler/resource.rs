@@ -11,11 +11,9 @@
 //! `ResourceDoesNotExist`, which at least says so honestly rather than 404-ing.
 
 use hyper::{
+    Body, Response, StatusCode,
     body::Buf,
     header::{CONTENT_LENGTH, CONTENT_TYPE},
-    Body,
-    Response,
-    StatusCode,
 };
 use serde::Deserialize;
 

@@ -3,10 +3,11 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-	accessory::{AccessoryInformation, HapAccessory},
-	service::{HapService, accessory_information::AccessoryInformationService, occupancy_sensor::OccupancySensorService},
-	HapType,
-	Result,
+    HapType, Result,
+    accessory::{AccessoryInformation, HapAccessory},
+    service::{
+        HapService, accessory_information::AccessoryInformationService, occupancy_sensor::OccupancySensorService,
+    },
 };
 
 /// Occupancy Sensor accessory.
@@ -65,17 +66,11 @@ impl HapAccessory for OccupancySensorAccessory {
     }
 
     fn get_services(&self) -> Vec<&dyn HapService> {
-        vec![
-            &self.accessory_information,
-            &self.occupancy_sensor,
-        ]
+        vec![&self.accessory_information, &self.occupancy_sensor]
     }
 
     fn get_mut_services(&mut self) -> Vec<&mut dyn HapService> {
-        vec![
-            &mut self.accessory_information,
-            &mut self.occupancy_sensor,
-        ]
+        vec![&mut self.accessory_information, &mut self.occupancy_sensor]
     }
 }
 

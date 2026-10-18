@@ -2,25 +2,24 @@ use erased_serde::serialize_trait_object;
 use futures::executor;
 
 use crate::{
+    HapType, Result,
     characteristic::{
-        accessory_flags::AccessoryFlagsCharacteristic,
+        HapCharacteristic, accessory_flags::AccessoryFlagsCharacteristic,
         application_matching_identifier::ApplicationMatchingIdentifierCharacteristic,
-        configured_name::ConfiguredNameCharacteristic,
-        firmware_revision::FirmwareRevisionCharacteristic,
-        hardware_finish::HardwareFinishCharacteristic,
-        hardware_revision::HardwareRevisionCharacteristic,
-        product_data::ProductDataCharacteristic,
-        software_revision::SoftwareRevisionCharacteristic,
-        HapCharacteristic,
+        configured_name::ConfiguredNameCharacteristic, firmware_revision::FirmwareRevisionCharacteristic,
+        hardware_finish::HardwareFinishCharacteristic, hardware_revision::HardwareRevisionCharacteristic,
+        product_data::ProductDataCharacteristic, software_revision::SoftwareRevisionCharacteristic,
     },
     pointer,
-    service::{accessory_information::AccessoryInformationService, HapService},
-    HapType,
-    Result,
+    service::{HapService, accessory_information::AccessoryInformationService},
 };
 
+// FORK: codegen output is not linted; fix lints in the codegen template instead. See FORK.md #24.
+#[allow(clippy::all)]
 mod category;
 mod defined;
+// FORK: codegen output is not linted; fix lints in the codegen template instead. See FORK.md #24.
+#[allow(clippy::all)]
 mod generated;
 
 pub use crate::accessory::{category::AccessoryCategory, defined::*, generated::*};

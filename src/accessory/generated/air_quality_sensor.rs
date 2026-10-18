@@ -3,10 +3,11 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-	accessory::{AccessoryInformation, HapAccessory},
-	service::{HapService, accessory_information::AccessoryInformationService, air_quality_sensor::AirQualitySensorService},
-	HapType,
-	Result,
+    HapType, Result,
+    accessory::{AccessoryInformation, HapAccessory},
+    service::{
+        HapService, accessory_information::AccessoryInformationService, air_quality_sensor::AirQualitySensorService,
+    },
 };
 
 /// Air Quality Sensor accessory.
@@ -65,17 +66,11 @@ impl HapAccessory for AirQualitySensorAccessory {
     }
 
     fn get_services(&self) -> Vec<&dyn HapService> {
-        vec![
-            &self.accessory_information,
-            &self.air_quality_sensor,
-        ]
+        vec![&self.accessory_information, &self.air_quality_sensor]
     }
 
     fn get_mut_services(&mut self) -> Vec<&mut dyn HapService> {
-        vec![
-            &mut self.accessory_information,
-            &mut self.air_quality_sensor,
-        ]
+        vec![&mut self.accessory_information, &mut self.air_quality_sensor]
     }
 }
 

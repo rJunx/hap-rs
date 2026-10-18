@@ -1,11 +1,11 @@
 use ed25519_dalek::SigningKey as Ed25519Keypair;
 //use eui48::MacAddress;
 use macaddr::MacAddr6 as MacAddress;
-use rand::{rand_core::UnwrapErr, rngs::SysRng, RngExt};
+use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
-use crate::{accessory::AccessoryCategory, BonjourFeatureFlag, BonjourStatusFlag, Pin};
+use crate::{BonjourFeatureFlag, BonjourStatusFlag, Pin, accessory::AccessoryCategory};
 
 /// The `Config` struct is used to store configuration options for the HomeKit Accessory Server.
 ///
@@ -50,7 +50,7 @@ pub struct Config {
     /// Pairing Identifier. Must be a unique random number generated at every factory reset and must persist across
     /// reboots.
     pub device_id: MacAddress, // Bonjour: id
-    ///
+    /// Long-term Ed25519 key pair: the accessory's identity in pair-setup and pair-verify.
     pub device_ed25519_keypair: Ed25519Keypair,
     /// Current configuration number. Is updated when an accessory, service, or characteristic is added or removed on
     /// the accessory server. Accessories must increment the config number after a firmware update.
@@ -80,7 +80,9 @@ pub struct Config {
 
 impl Config {
     /// Redetermines the `host` field to the IP of the system's first non-loopback network interface.
-    pub fn redetermine_local_ip(&mut self) { self.host = get_local_ip(); }
+    pub fn redetermine_local_ip(&mut self) {
+        self.host = get_local_ip();
+    }
 
     /// Derives mDNS TXT records from the `Config`.
     pub(crate) fn txt_records(&self) -> [String; 9] {

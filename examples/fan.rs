@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{fan::FanAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, fan::FanAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let fan = FanAccessory::new(1, AccessoryInformation {
-        name: "Acme Fan".into(),
-        ..Default::default()
-    })?;
+    let fan = FanAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Fan".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

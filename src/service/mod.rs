@@ -1,7 +1,9 @@
 use erased_serde::serialize_trait_object;
 
-use crate::{characteristic::HapCharacteristic, HapType};
+use crate::{HapType, characteristic::HapCharacteristic};
 
+// FORK: codegen output is not linted; fix lints in the codegen template instead. See FORK.md #24.
+#[allow(clippy::all)]
 mod generated;
 
 pub use crate::service::generated::*;

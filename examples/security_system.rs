@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{security_system::SecuritySystemAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, security_system::SecuritySystemAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let security_system = SecuritySystemAccessory::new(1, AccessoryInformation {
-        name: "Acme Security System".into(),
-        ..Default::default()
-    })?;
+    let security_system = SecuritySystemAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Security System".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

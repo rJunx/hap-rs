@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{smart_speaker::SmartSpeakerAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, smart_speaker::SmartSpeakerAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let smart_speaker = SmartSpeakerAccessory::new(1, AccessoryInformation {
-        name: "Acme Smart Speaker".into(),
-        ..Default::default()
-    })?;
+    let smart_speaker = SmartSpeakerAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Smart Speaker".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{switch::SwitchAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, switch::SwitchAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let switch = SwitchAccessory::new(1, AccessoryInformation {
-        name: "Acme Switch".into(),
-        ..Default::default()
-    })?;
+    let switch = SwitchAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Switch".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

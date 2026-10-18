@@ -3,12 +3,9 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-    service::HapService,
-    characteristic::{
-        HapCharacteristic,
-		wi_fi_satellite_status::WiFiSatelliteStatusCharacteristic,
-	},
     HapType,
+    characteristic::{HapCharacteristic, wi_fi_satellite_status::WiFiSatelliteStatusCharacteristic},
+    service::HapService,
 };
 
 /// Wi-Fi Satellite service.
@@ -25,9 +22,8 @@ pub struct WiFiSatelliteService {
     /// An array of numbers containing the instance IDs of the services that this service links to.
     linked_services: Vec<u64>,
 
-	/// Wi-Fi Satellite Status characteristic (required).
-	pub wi_fi_satellite_status: WiFiSatelliteStatusCharacteristic,
-
+    /// Wi-Fi Satellite Status characteristic (required).
+    pub wi_fi_satellite_status: WiFiSatelliteStatusCharacteristic,
 }
 
 impl WiFiSatelliteService {
@@ -36,8 +32,8 @@ impl WiFiSatelliteService {
         Self {
             id,
             hap_type: HapType::WiFiSatellite,
-			wi_fi_satellite_status: WiFiSatelliteStatusCharacteristic::new(id + 1 + 0, accessory_id),
-			..Default::default()
+            wi_fi_satellite_status: WiFiSatelliteStatusCharacteristic::new(id + 1 + 0, accessory_id),
+            ..Default::default()
         }
     }
 }
@@ -103,18 +99,14 @@ impl HapService for WiFiSatelliteService {
 
     fn get_characteristics(&self) -> Vec<&dyn HapCharacteristic> {
         #[allow(unused_mut)]
-        let mut characteristics: Vec<&dyn HapCharacteristic> = vec![
-			&self.wi_fi_satellite_status,
-		];
-		characteristics
+        let mut characteristics: Vec<&dyn HapCharacteristic> = vec![&self.wi_fi_satellite_status];
+        characteristics
     }
 
     fn get_mut_characteristics(&mut self) -> Vec<&mut dyn HapCharacteristic> {
         #[allow(unused_mut)]
-        let mut characteristics: Vec<&mut dyn HapCharacteristic> = vec![
-			&mut self.wi_fi_satellite_status,
-		];
-		characteristics
+        let mut characteristics: Vec<&mut dyn HapCharacteristic> = vec![&mut self.wi_fi_satellite_status];
+        characteristics
     }
 }
 

@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{outlet::OutletAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, outlet::OutletAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let outlet = OutletAccessory::new(1, AccessoryInformation {
-        name: "Acme Outlet".into(),
-        ..Default::default()
-    })?;
+    let outlet = OutletAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Outlet".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

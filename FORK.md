@@ -361,6 +361,26 @@ Mechanical, from `cargo fix --edition`, which is why it touches so many files. T
 * The examples' `std::env::set_var` is `unsafe` in 2024 and is wrapped as such, with cargo's own
   FIXME left on each: they call it inside `#[tokio::main]`, where runtime threads already exist.
 
+## 24. Stable rustfmt, and clippy clean
+
+**`rustfmt.toml`, the `mod generated` / `mod hap_type` / `mod category` declarations, everything
+formatted**
+
+Upstream's `rustfmt.toml` was nightly-only: `unstable_features`, the deprecated `version = "Two"`,
+and a dozen unstable options. On stable they were ignored with a warning per file -- including the
+`ignore` list that kept codegen output out. It is now the five stable options plus
+`style_edition = "2024"`, the same toolchain as the rs-home workspace, and **all** files are
+formatted, generated ones too. codegen does not format its own output, so **run `cargo fmt` after
+regenerating**, or the diff will be every file.
+
+Codegen output is not linted: `#[allow(clippy::all)]` sits on the module declarations, and a lint
+there is fixed in the codegen template. The hand-written rest is clippy-clean. Mostly
+`clippy --fix`; by hand, `manual_find` loops in the `defined` accessories, `Display` instead of
+`ToString` for `Pin` and `ContentType`, and reasoned `#[allow]`s where the lint is an API shape
+(`too_many_arguments` on the characteristic constructor and the handler traits).
+
+`[build-dependencies]` in `Cargo.toml` are dead -- there is no `build.rs` -- and are left for now.
+
 ---
 
 ## Known-missing, not yet fixed

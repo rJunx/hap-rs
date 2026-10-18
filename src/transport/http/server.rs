@@ -3,25 +3,27 @@ use futures::{
     future::{self, BoxFuture, Future, FutureExt, TryFutureExt},
     lock::Mutex,
 };
-use hyper::{server::conn::Http, service::Service, Body, Method, Request, Response, StatusCode};
+use hyper::{Body, Method, Request, Response, StatusCode, server::conn::Http, service::Service};
 use log::{debug, error, info, warn};
 use std::{
     net::SocketAddr,
     pin::Pin,
-    sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
     time::Duration,
 };
 use tokio::net::TcpListener;
 
 use crate::{
+    Error, Result,
     event::Event,
     pointer,
     transport::{
         http::{
-            event_response,
+            EventObject, event_response,
             handler::{
+                HandlerExt, JsonHandler, TlvHandler,
                 accessories::Accessories,
                 characteristics::{GetCharacteristics, UpdateCharacteristics},
                 identify::Identify,
@@ -29,18 +31,11 @@ use crate::{
                 pair_verify::PairVerify,
                 pairings::Pairings,
                 resource,
-                HandlerExt,
-                JsonHandler,
-                TlvHandler,
             },
-            json_response,
-            status_response,
-            EventObject,
+            json_response, status_response,
         },
         tcp::{EncryptedStream, Session, StreamWrapper},
     },
-    Error,
-    Result,
 };
 
 struct Handlers {
@@ -66,6 +61,7 @@ struct Api {
 }
 
 impl Api {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         controller_id: pointer::ControllerId,
         event_subscriptions: pointer::EventSubscriptions,
@@ -160,8 +156,7 @@ impl Service<Request<Body>> for Api {
                 // Responses mirror HAP-NodeJS `HAPServer.js:846-875` exactly: a missing body,
                 // an absent `pid` or `ttl`, or anything but PUT is `400` with
                 // `-70410` (INVALID_VALUE_IN_REQUEST); only a well-formed request gets `0`.
-                let request: serde_json::Value =
-                    serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+                let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
 
                 // `pid` is a 64-bit identifier -- observed values exceed `i64::MAX`, so it is
                 // read as a JSON number rather than parsed into an integer type.
@@ -215,7 +210,7 @@ impl Service<Request<Body>> for Api {
             .boxed();
         }
 
-        let fut = async move {
+        (async move {
             // FORK: at debug level, the request and the answer in full -- method, path with query,
             // body, status, response body. The transport log only ever showed byte counts, which
             // could tell that a home hub hung up after one particular exchange but not what that
@@ -235,7 +230,7 @@ impl Service<Request<Body>> for Api {
             };
 
             let response = match handler.take() {
-                Some(handler) =>
+                Some(handler) => {
                     handler
                         .lock()
                         .await
@@ -249,7 +244,8 @@ impl Service<Request<Body>> for Api {
                             accessory_database,
                             event_emitter,
                         )
-                        .await,
+                        .await
+                },
                 // FORK: log what we refused.
                 //
                 // An unrouted request used to 404 in silence, which made a missing route
@@ -275,13 +271,15 @@ impl Service<Request<Body>> for Api {
             debug!(
                 "response {logged_method} {logged_path}: {} {}",
                 parts.status,
-                if text { String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).into_owned() } else { format!("({} bytes)", bytes.len()) }
+                if text {
+                    String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).into_owned()
+                } else {
+                    format!("({} bytes)", bytes.len())
+                }
             );
             Ok(Response::from_parts(parts, Body::from(bytes)))
         }
-        .boxed();
-
-        fut
+        .boxed()) as _
     }
 }
 
@@ -328,7 +326,7 @@ impl Server {
             let socket_addr = SocketAddr::new(config_lock.host, config_lock.port);
             drop(config_lock);
 
-            info!("binding TCP listener on {}", &socket_addr);
+            info!("binding TCP listener on {}", socket_addr);
             let listener = TcpListener::bind(socket_addr).await?;
 
             mdns_responder.lock().await.update_records().await;
@@ -395,12 +393,13 @@ impl Server {
                 // matched its subscriptions and swallowed the event.
                 let alive = Arc::new(AtomicBool::new(true));
 
-                event_emitter.lock().await.add_scoped_listener(alive.clone(), Box::new(move |event| {
-                    let event_subscriptions_ = event_subscriptions.clone();
-                    let stream_outgoing_ = stream_outgoing.clone();
-                    async move {
-                        match *event {
-                            Event::CharacteristicValueChanged { aid, iid, ref value } => {
+                event_emitter.lock().await.add_scoped_listener(
+                    alive.clone(),
+                    Box::new(move |event| {
+                        let event_subscriptions_ = event_subscriptions.clone();
+                        let stream_outgoing_ = stream_outgoing.clone();
+                        async move {
+                            if let Event::CharacteristicValueChanged { aid, iid, ref value } = *event {
                                 let mut dropped_subscriptions = vec![];
                                 for (i, &(s_aid, s_iid)) in event_subscriptions_.lock().await.iter().enumerate() {
                                     if s_aid == aid && s_iid == iid {
@@ -420,12 +419,11 @@ impl Server {
                                 for s in dropped_subscriptions {
                                     ev.remove(s);
                                 }
-                            },
-                            _ => {},
+                            }
                         }
-                    }
-                    .boxed()
-                }));
+                        .boxed()
+                    }),
+                );
 
                 let mut http = Http::new();
                 http.http1_only(true);

@@ -3,13 +3,12 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-    service::HapService,
-    characteristic::{
-        HapCharacteristic,
-		supported_audio_stream_configuration::SupportedAudioStreamConfigurationCharacteristic,
-		selected_audio_stream_configuration::SelectedAudioStreamConfigurationCharacteristic,
-	},
     HapType,
+    characteristic::{
+        HapCharacteristic, selected_audio_stream_configuration::SelectedAudioStreamConfigurationCharacteristic,
+        supported_audio_stream_configuration::SupportedAudioStreamConfigurationCharacteristic,
+    },
+    service::HapService,
 };
 
 /// Audio Stream Management service.
@@ -26,11 +25,10 @@ pub struct AudioStreamManagementService {
     /// An array of numbers containing the instance IDs of the services that this service links to.
     linked_services: Vec<u64>,
 
-	/// Supported Audio Stream Configuration characteristic (required).
-	pub supported_audio_stream_configuration: SupportedAudioStreamConfigurationCharacteristic,
-	/// Selected Audio Stream Configuration characteristic (required).
-	pub selected_audio_stream_configuration: SelectedAudioStreamConfigurationCharacteristic,
-
+    /// Supported Audio Stream Configuration characteristic (required).
+    pub supported_audio_stream_configuration: SupportedAudioStreamConfigurationCharacteristic,
+    /// Selected Audio Stream Configuration characteristic (required).
+    pub selected_audio_stream_configuration: SelectedAudioStreamConfigurationCharacteristic,
 }
 
 impl AudioStreamManagementService {
@@ -39,9 +37,15 @@ impl AudioStreamManagementService {
         Self {
             id,
             hap_type: HapType::AudioStreamManagement,
-			supported_audio_stream_configuration: SupportedAudioStreamConfigurationCharacteristic::new(id + 1 + 0, accessory_id),
-			selected_audio_stream_configuration: SelectedAudioStreamConfigurationCharacteristic::new(id + 1 + 1, accessory_id),
-			..Default::default()
+            supported_audio_stream_configuration: SupportedAudioStreamConfigurationCharacteristic::new(
+                id + 1 + 0,
+                accessory_id,
+            ),
+            selected_audio_stream_configuration: SelectedAudioStreamConfigurationCharacteristic::new(
+                id + 1 + 1,
+                accessory_id,
+            ),
+            ..Default::default()
         }
     }
 }
@@ -108,19 +112,19 @@ impl HapService for AudioStreamManagementService {
     fn get_characteristics(&self) -> Vec<&dyn HapCharacteristic> {
         #[allow(unused_mut)]
         let mut characteristics: Vec<&dyn HapCharacteristic> = vec![
-			&self.supported_audio_stream_configuration,
-			&self.selected_audio_stream_configuration,
-		];
-		characteristics
+            &self.supported_audio_stream_configuration,
+            &self.selected_audio_stream_configuration,
+        ];
+        characteristics
     }
 
     fn get_mut_characteristics(&mut self) -> Vec<&mut dyn HapCharacteristic> {
         #[allow(unused_mut)]
         let mut characteristics: Vec<&mut dyn HapCharacteristic> = vec![
-			&mut self.supported_audio_stream_configuration,
-			&mut self.selected_audio_stream_configuration,
-		];
-		characteristics
+            &mut self.supported_audio_stream_configuration,
+            &mut self.selected_audio_stream_configuration,
+        ];
+        characteristics
     }
 }
 

@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{thermostat::ThermostatAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, thermostat::ThermostatAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let thermostat = ThermostatAccessory::new(1, AccessoryInformation {
-        name: "Acme Thermostat".into(),
-        ..Default::default()
-    })?;
+    let thermostat = ThermostatAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Thermostat".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

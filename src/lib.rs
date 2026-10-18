@@ -14,6 +14,8 @@ pub use crate::{
 mod config;
 mod error;
 mod event;
+// FORK: codegen output is not linted; fix lints in the codegen template instead. See FORK.md #24.
+#[allow(clippy::all)]
 mod hap_type;
 mod pin;
 mod pointer;

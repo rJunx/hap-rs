@@ -7,15 +7,14 @@ use log::{error, info};
 use std::sync::Arc;
 
 use crate::{
+    BonjourStatusFlag, Result,
     accessory::HapAccessory,
     config::Config,
     event::{Event, EventEmitter},
     pointer,
     server::Server,
-    storage::{accessory_database::AccessoryDatabase, Storage},
+    storage::{Storage, accessory_database::AccessoryDatabase},
     transport::{http::server::Server as HttpServer, mdns::MdnsResponder},
-    BonjourStatusFlag,
-    Result,
 };
 
 /// HAP Server via TCP/IP.
@@ -126,25 +125,25 @@ impl IpServer {
                         info!("controller {} paired", id);
 
                         let pairing_count = storage_.lock().await.count_pairings().await;
-                        if let Ok(count) = pairing_count {
-                            if count > 0 {
-                                info!("1 or more controllers paired; setting Bonjour status flag to `Zero`");
+                        if let Ok(count) = pairing_count
+                            && count > 0
+                        {
+                            info!("1 or more controllers paired; setting Bonjour status flag to `Zero`");
 
-                                let mut c = config_.lock().await;
-                                c.status_flag = BonjourStatusFlag::Zero;
+                            let mut c = config_.lock().await;
+                            c.status_flag = BonjourStatusFlag::Zero;
 
-                                storage_
-                                    .lock()
-                                    .await
-                                    .save_config(&c)
-                                    .await
-                                    .map_err(|e| error!("error saving the config: {:?}", e))
-                                    .ok();
+                            storage_
+                                .lock()
+                                .await
+                                .save_config(&c)
+                                .await
+                                .map_err(|e| error!("error saving the config: {:?}", e))
+                                .ok();
 
-                                drop(c);
+                            drop(c);
 
-                                mdns_responder_.lock().await.update_records().await;
-                            }
+                            mdns_responder_.lock().await.update_records().await;
                         }
                     },
                     Event::ControllerUnpaired { id } => {
@@ -152,25 +151,25 @@ impl IpServer {
 
                         let pairing_count = storage_.lock().await.count_pairings().await;
                         // TODO - `pairing_count` is an Err
-                        if let Ok(count) = pairing_count {
-                            if count == 0 {
-                                info!("0 controllers paired; setting Bonjour status flag to `Not Paired`");
+                        if let Ok(count) = pairing_count
+                            && count == 0
+                        {
+                            info!("0 controllers paired; setting Bonjour status flag to `Not Paired`");
 
-                                let mut c = config_.lock().await;
-                                c.status_flag = BonjourStatusFlag::NotPaired;
+                            let mut c = config_.lock().await;
+                            c.status_flag = BonjourStatusFlag::NotPaired;
 
-                                storage_
-                                    .lock()
-                                    .await
-                                    .save_config(&c)
-                                    .await
-                                    .map_err(|e| error!("error saving the config: {:?}", e))
-                                    .ok();
+                            storage_
+                                .lock()
+                                .await
+                                .save_config(&c)
+                                .await
+                                .map_err(|e| error!("error saving the config: {:?}", e))
+                                .ok();
 
-                                drop(c);
+                            drop(c);
 
-                                mdns_responder_.lock().await.update_records().await;
-                            }
+                            mdns_responder_.lock().await.update_records().await;
                         }
                     },
                     _ => {},
@@ -255,9 +254,13 @@ impl Server for IpServer {
         Box::pin(handle)
     }
 
-    fn config_pointer(&self) -> pointer::Config { self.config.clone() }
+    fn config_pointer(&self) -> pointer::Config {
+        self.config.clone()
+    }
 
-    fn storage_pointer(&self) -> pointer::Storage { self.storage.clone() }
+    fn storage_pointer(&self) -> pointer::Storage {
+        self.storage.clone()
+    }
 
     async fn add_accessory<A: HapAccessory + 'static>(&self, accessory: A) -> Result<pointer::Accessory> {
         let aid = accessory.get_id();
@@ -284,11 +287,7 @@ impl Server for IpServer {
     async fn remove_accessory(&self, accessory: &pointer::Accessory) -> Result<()> {
         let aid = accessory.lock().await.get_id();
 
-        self.accessory_database
-            .lock()
-            .await
-            .remove_accessory(&accessory)
-            .await?;
+        self.accessory_database.lock().await.remove_accessory(accessory).await?;
 
         let mut aid_cache = self.aid_cache.lock().await;
         if aid_cache.contains(&aid) {

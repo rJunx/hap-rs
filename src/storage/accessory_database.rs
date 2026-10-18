@@ -5,12 +5,11 @@ use log::{debug, info, warn};
 use serde_json::json;
 
 use crate::{
+    Error, Result,
     accessory::HapAccessory,
     characteristic::Perm,
     pointer,
     transport::http::{ReadResponseObject, Status, WriteObject, WriteResponseObject},
-    Error,
-    Result,
 };
 
 /// `AccessoryDatabase` is a wrapper type holding a list of accessories.
@@ -235,7 +234,7 @@ impl AccessoryDatabase {
 
         let json = json!({ "accessories": accessory_values });
 
-        debug!("accessory list JSON: {}", &json);
+        debug!("accessory list JSON: {}", json);
 
         Ok(serde_json::to_vec(&json)?)
     }

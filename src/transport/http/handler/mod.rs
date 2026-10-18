@@ -2,11 +2,9 @@ use futures::future::{BoxFuture, FutureExt};
 use hyper::{self, Body, Response, StatusCode, Uri};
 
 use crate::{
-    pointer,
+    Error, Result, pointer,
     tlv::{self, Encodable},
     transport::http::{status_response, tlv_response},
-    Error,
-    Result,
 };
 
 pub mod accessories;
@@ -19,6 +17,7 @@ pub mod pairings;
 pub mod resource;
 
 pub trait HandlerExt {
+    #[allow(clippy::too_many_arguments)] // the shared pointers every handler is given
     fn handle(
         &mut self,
         uri: Uri,
@@ -51,7 +50,9 @@ pub trait TlvHandlerExt {
 pub struct TlvHandler<T: TlvHandlerExt + Send + Sync>(T);
 
 impl<T: TlvHandlerExt + Send + Sync> From<T> for TlvHandler<T> {
-    fn from(inst: T) -> TlvHandler<T> { TlvHandler(inst) }
+    fn from(inst: T) -> TlvHandler<T> {
+        TlvHandler(inst)
+    }
 }
 
 impl<T: TlvHandlerExt + Send + Sync> HandlerExt for TlvHandler<T> {
@@ -81,6 +82,7 @@ impl<T: TlvHandlerExt + Send + Sync> HandlerExt for TlvHandler<T> {
 }
 
 pub trait JsonHandlerExt {
+    #[allow(clippy::too_many_arguments)] // the shared pointers every handler is given
     fn handle(
         &mut self,
         uri: Uri,
@@ -98,7 +100,9 @@ pub trait JsonHandlerExt {
 pub struct JsonHandler<T: JsonHandlerExt + Send + Sync>(T);
 
 impl<T: JsonHandlerExt + Send + Sync> From<T> for JsonHandler<T> {
-    fn from(inst: T) -> JsonHandler<T> { JsonHandler(inst) }
+    fn from(inst: T) -> JsonHandler<T> {
+        JsonHandler(inst)
+    }
 }
 
 impl<T: JsonHandlerExt + Send + Sync> HandlerExt for JsonHandler<T> {

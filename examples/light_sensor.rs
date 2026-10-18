@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{light_sensor::LightSensorAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, light_sensor::LightSensorAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let light_sensor = LightSensorAccessory::new(1, AccessoryInformation {
-        name: "Acme Light Sensor".into(),
-        ..Default::default()
-    })?;
+    let light_sensor = LightSensorAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Light Sensor".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

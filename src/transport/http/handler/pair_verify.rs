@@ -1,11 +1,11 @@
 use chacha20poly1305::{AeadInOut, ChaCha20Poly1305, KeyInit, Nonce, Tag};
+use ed25519_dalek::{Signer, Verifier};
 use futures::{
     channel::oneshot,
     future::{BoxFuture, FutureExt},
 };
-use hyper::{body::Buf, Body};
+use hyper::{Body, body::Buf};
 use log::{debug, info, warn};
-use ed25519_dalek::{Signer, Verifier};
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use std::str;
 use uuid::Uuid;
@@ -216,17 +216,17 @@ async fn handle_finish(
             )?;
 
             let sub_tlv = tlv::decode(&decrypted_data);
-            debug!("received sub-TLV: {:?}", &sub_tlv);
+            debug!("received sub-TLV: {:?}", sub_tlv);
             let device_pairing_id = sub_tlv.get(&(Type::Identifier as u8)).ok_or(tlv::Error::Unknown)?;
-            debug!("raw device pairing ID: {:?}", &device_pairing_id);
+            debug!("raw device pairing ID: {:?}", device_pairing_id);
             let device_signature = ed25519_dalek::Signature::from_slice(
                 sub_tlv.get(&(Type::Signature as u8)).ok_or(tlv::Error::Unknown)?,
             )?;
-            debug!("device signature: {:?}", &device_signature);
+            debug!("device signature: {:?}", device_signature);
 
             let uuid_str = str::from_utf8(device_pairing_id)?;
             let pairing_uuid = Uuid::parse_str(uuid_str)?;
-            debug!("device pairing UUID: {:?}", &pairing_uuid);
+            debug!("device pairing UUID: {:?}", pairing_uuid);
             // FORK: an unknown controller is an **authentication** failure, not an unknown one.
             //
             // `load_pairing` returns `io::ErrorKind::NotFound` when the controller has no pairing
@@ -242,16 +242,11 @@ async fn handle_finish(
             // Symptom: a home hub re-attempting pair-verify every few seconds indefinitely,
             // filling the log with `Io(NotFound)`, and never falling back to credentials that
             // would work.
-            let pairing = storage
-                .lock()
-                .await
-                .load_pairing(&pairing_uuid)
-                .await
-                .map_err(|_| {
-                    warn!("pair verify M3: no pairing for controller {pairing_uuid}; refusing");
-                    tlv::Error::Authentication
-                })?;
-            debug!("loaded pairing: {:?}", &pairing);
+            let pairing = storage.lock().await.load_pairing(&pairing_uuid).await.map_err(|_| {
+                warn!("pair verify M3: no pairing for controller {pairing_uuid}; refusing");
+                tlv::Error::Authentication
+            })?;
+            debug!("loaded pairing: {:?}", pairing);
 
             let mut device_info: Vec<u8> = Vec::new();
             device_info.extend(session.a_pub.as_bytes());

@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{carbon_dioxide_sensor::CarbonDioxideSensorAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, carbon_dioxide_sensor::CarbonDioxideSensorAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let carbon_dioxide_sensor = CarbonDioxideSensorAccessory::new(1, AccessoryInformation {
-        name: "Acme Carbon dioxide Sensor".into(),
-        ..Default::default()
-    })?;
+    let carbon_dioxide_sensor = CarbonDioxideSensorAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Carbon dioxide Sensor".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

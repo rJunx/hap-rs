@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{smoke_sensor::SmokeSensorAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, smoke_sensor::SmokeSensorAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let smoke_sensor = SmokeSensorAccessory::new(1, AccessoryInformation {
-        name: "Acme Smoke Sensor".into(),
-        ..Default::default()
-    })?;
+    let smoke_sensor = SmokeSensorAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Smoke Sensor".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

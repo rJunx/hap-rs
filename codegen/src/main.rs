@@ -1,6 +1,6 @@
 use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError, Renderable};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -148,20 +148,20 @@ impl From<SystemMetadata> for RenderMetadata {
         let mut m = v.plist_dictionary;
 
         // rename mislabeled services
-        let mut accessory_information_service = m.hap.services.get_mut("accessory-information").unwrap();
+        let accessory_information_service = m.hap.services.get_mut("accessory-information").unwrap();
         accessory_information_service.name = "Accessory Information".to_string();
-        let mut fan_v2_service = m.hap.services.get_mut("fanv2").unwrap();
+        let fan_v2_service = m.hap.services.get_mut("fanv2").unwrap();
         fan_v2_service.name = "Fan v2".to_string();
-        let mut smart_speaker_service = m.hap.services.get_mut("smart-speaker").unwrap();
+        let smart_speaker_service = m.hap.services.get_mut("smart-speaker").unwrap();
         smart_speaker_service.name = "Smart Speaker".to_string();
 
-        let mut sorted_categories = m.homekit.categories.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+        let mut sorted_categories = m.homekit.categories.values().cloned().collect::<Vec<_>>();
         sorted_categories.sort_by(|a, b| a.number.partial_cmp(&b.number).unwrap());
 
-        let mut sorted_characteristics = m.hap.characteristics.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+        let mut sorted_characteristics = m.hap.characteristics.values().cloned().collect::<Vec<_>>();
         sorted_characteristics.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let mut sorted_services = m.hap.services.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+        let mut sorted_services = m.hap.services.values().cloned().collect::<Vec<_>>();
         sorted_services.sort_by(|a, b| a.name.cmp(&b.name));
 
         let mut characteristic_in_values = HashMap::new();
@@ -217,7 +217,7 @@ fn if_eq_helper<'reg, 'rc>(
     let second = h.param(1).unwrap().value();
     let tmpl = if first == second { h.template() } else { h.inverse() };
     match tmpl {
-        Some(ref t) => t.render(r, c, rc, out),
+        Some(t) => t.render(r, c, rc, out),
         None => Ok(()),
     }
 }
@@ -449,10 +449,9 @@ fn category_helper(
             let name = param
                 .to_lowercase()
                 .split(" ")
-                .into_iter()
                 .map(|word| {
                     let mut c = word.chars().collect::<Vec<char>>();
-                    c[0] = c[0].to_uppercase().nth(0).unwrap();
+                    c[0] = c[0].to_uppercase().next().unwrap();
                     c.into_iter().collect::<String>()
                 })
                 .collect::<String>();
@@ -473,7 +472,7 @@ fn uuid_helper(
 ) -> Result<(), RenderError> {
     let param = h.param(0).unwrap().value();
     if let Some(s) = param.as_str() {
-        out.write(&shorten_uuid(&s))?;
+        out.write(&shorten_uuid(s))?;
     }
     Ok(())
 }
@@ -545,14 +544,13 @@ fn in_values_enum_helper(
         let key = key
             .to_lowercase()
             .split("_")
-            .into_iter()
             .map(|word| {
                 let mut c = word.chars().collect::<Vec<char>>();
 
                 if c.len() == 1 && c[0].is_numeric() {
                     format!("Num{}", c[0])
                 } else {
-                    c[0] = c[0].to_uppercase().nth(0).unwrap();
+                    c[0] = c[0].to_uppercase().next().unwrap();
                     c.into_iter().collect::<String>()
                 }
             })
@@ -585,14 +583,13 @@ fn out_values_enum_helper(
         let key = key
             .to_lowercase()
             .split("_")
-            .into_iter()
             .map(|word| {
                 let mut c = word.chars().collect::<Vec<char>>();
 
                 if c.len() == 1 && c[0].is_numeric() {
                     format!("Num{}", c[0])
                 } else {
-                    c[0] = c[0].to_uppercase().nth(0).unwrap();
+                    c[0] = c[0].to_uppercase().next().unwrap();
                     c.into_iter().collect::<String>()
                 }
             })
@@ -664,7 +661,9 @@ fn array_length_helper(
     Ok(())
 }
 
-fn shorten_uuid(id: &str) -> String { id.trim_start_matches('0').to_owned() }
+fn shorten_uuid(id: &str) -> String {
+    id.trim_start_matches('0').to_owned()
+}
 
 fn snake_case_helper(
     h: &Helper,
@@ -695,10 +694,9 @@ fn pascal_case_helper(
     let name = param
         .to_lowercase()
         .split(" ")
-        .into_iter()
         .map(|word| {
             let mut c = word.chars().collect::<Vec<char>>();
-            c[0] = c[0].to_uppercase().nth(0).unwrap();
+            c[0] = c[0].to_uppercase().next().unwrap();
             c.into_iter().collect::<String>()
         })
         .collect::<String>();
@@ -707,7 +705,7 @@ fn pascal_case_helper(
     Ok(())
 }
 
-static CATEGORIES: &'static str = "// this file is auto-generated by hap-codegen\n
+static CATEGORIES: &str = "// this file is auto-generated by hap-codegen\n
 use serde::{Deserialize, Serialize};
 
 /// HAP accessory category.
@@ -719,7 +717,7 @@ pub enum AccessoryCategory {
 }
 ";
 
-static HAP_TYPE: &'static str = "// this file is auto-generated by hap-codegen\n
+static HAP_TYPE: &str = "// this file is auto-generated by hap-codegen\n
 use serde::{
     de::{self, Deserialize, Deserializer},
     ser::{Serialize, Serializer},
@@ -800,7 +798,7 @@ impl Serialize for HapType {
 }
 ";
 
-static CHARACTERISTIC: &'static str = "// this file is auto-generated by hap-codegen\n
+static CHARACTERISTIC: &str = "// this file is auto-generated by hap-codegen\n
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::json;
@@ -978,11 +976,11 @@ impl AsyncCharacteristicCallbacks<{{type characteristic.Format}}> for {{pascal_c
 }
 ";
 
-static CHARACTERISTIC_MOD: &'static str = "// this file is auto-generated by hap-codegen
+static CHARACTERISTIC_MOD: &str = "// this file is auto-generated by hap-codegen
 {{#each characteristics as |c|}}\n/// {{c.name}} characteristic definition.\npub mod {{c.file_name}};{{/each}}
 ";
 
-static SERVICE: &'static str = "// this file is auto-generated by hap-codegen\n
+static SERVICE: &str = "// this file is auto-generated by hap-codegen\n
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
@@ -1147,11 +1145,11 @@ impl Serialize for {{pascal_case service.DefaultDescription}}Service {
 }
 ";
 
-static SERVICE_MOD: &'static str = "// this file is auto-generated by hap-codegen
+static SERVICE_MOD: &str = "// this file is auto-generated by hap-codegen
 {{#each services as |s|}}\n/// {{s.name}} service definition.\npub mod {{s.file_name}};{{/each}}
 ";
 
-static ACCESSORY: &'static str = "// this file is auto-generated by hap-codegen\n
+static ACCESSORY: &str = "// this file is auto-generated by hap-codegen\n
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
@@ -1241,11 +1239,11 @@ impl Serialize for {{pascal_case service.DefaultDescription}}Accessory {
 }
 ";
 
-static ACCESSORY_MOD: &'static str = "// this file is auto-generated by hap-codegen
+static ACCESSORY_MOD: &str = "// this file is auto-generated by hap-codegen
 {{#each accessories as |a|}}\n/// {{a.name}} accessory definition.\npub mod {{a.file_name}};{{/each}}
 ";
 
-static EXAMPLE: &'static str = "\
+static EXAMPLE: &str = "\
 use tokio;
 
 use hap::{
@@ -1300,7 +1298,7 @@ async fn main() -> Result<()> {
 
 /// Services for which accessories need some level of manual adjustment and therefore we don't want to auto-generate an
 /// accesory for.
-const NON_IDIOMATIC_SERVICES: &'static [&'static str] = &[
+const NON_IDIOMATIC_SERVICES: &[&str] = &[
     "access code",
     "accessory information",
     "accessory metrics",
@@ -1346,10 +1344,10 @@ const NON_IDIOMATIC_SERVICES: &'static [&'static str] = &[
 
 /// Services for which we can auto-generate an accessory, but want to skip the example generation because the example
 /// needs some level of manual adjustment.
-const SKIP_EXAMPLE_GENERATION: &'static [&'static str] = &["humidifier-dehumidifier"];
+const SKIP_EXAMPLE_GENERATION: &[&str] = &["humidifier-dehumidifier"];
 
 /// Example file names that are generated or edited manually and therefore shouldn't be overridden by codegen.
-const MANUALLY_GENERATED_EXAMPLES: &'static [&'static str] = &[
+const MANUALLY_GENERATED_EXAMPLES: &[&str] = &[
     "adding_accessories_dynamically.rs",
     "async_callbacks.rs",
     "bridged_accessories.rs",
@@ -1425,9 +1423,9 @@ fn main() {
 
     let characteristic_base_path = "src/characteristic/generated/";
     if std::path::Path::new(&characteristic_base_path).exists() {
-        fs::remove_dir_all(&characteristic_base_path).unwrap();
+        fs::remove_dir_all(characteristic_base_path).unwrap();
     }
-    fs::create_dir_all(&characteristic_base_path).unwrap();
+    fs::create_dir_all(characteristic_base_path).unwrap();
     let mut characteristic_names = vec![];
     for (c_name, c) in &metadata.characteristics {
         let in_values = metadata.characteristic_in_values.get(c_name);
@@ -1458,7 +1456,7 @@ fn main() {
             .unwrap()
             .as_str()
             .unwrap()
-            .cmp(&b.get("file_name").unwrap().as_str().unwrap())
+            .cmp(b.get("file_name").unwrap().as_str().unwrap())
     });
     let characteristic_mod = handlebars
         .render(
@@ -1466,7 +1464,7 @@ fn main() {
             &json!({ "characteristics": characteristic_names }),
         )
         .unwrap();
-    let mut characteristic_mod_file = File::create(&format!("{}mod.rs", characteristic_base_path)).unwrap();
+    let mut characteristic_mod_file = File::create(format!("{}mod.rs", characteristic_base_path)).unwrap();
     characteristic_mod_file
         .write_all(characteristic_mod.as_bytes())
         .unwrap();
@@ -1474,10 +1472,10 @@ fn main() {
     let service_base_path = "src/service/generated/";
     let accessory_base_path = "src/accessory/generated/";
     if std::path::Path::new(&service_base_path).exists() {
-        fs::remove_dir_all(&service_base_path).unwrap();
+        fs::remove_dir_all(service_base_path).unwrap();
     }
     if std::path::Path::new(&accessory_base_path).exists() {
-        fs::remove_dir_all(&accessory_base_path).unwrap();
+        fs::remove_dir_all(accessory_base_path).unwrap();
     }
     for entry in fs::read_dir("examples").unwrap() {
         let entry = entry.unwrap();
@@ -1488,8 +1486,8 @@ fn main() {
             fs::remove_file(entry.path()).unwrap();
         }
     }
-    fs::create_dir_all(&service_base_path).unwrap();
-    fs::create_dir_all(&accessory_base_path).unwrap();
+    fs::create_dir_all(service_base_path).unwrap();
+    fs::create_dir_all(accessory_base_path).unwrap();
     let mut service_names = vec![];
     let mut accessory_names = vec![];
     for s in &metadata.sorted_services {
@@ -1559,11 +1557,11 @@ fn main() {
     let service_mod = handlebars
         .render("service_mod", &json!({ "services": service_names }))
         .unwrap();
-    let mut service_mod_file = File::create(&format!("{}mod.rs", service_base_path)).unwrap();
+    let mut service_mod_file = File::create(format!("{}mod.rs", service_base_path)).unwrap();
     service_mod_file.write_all(service_mod.as_bytes()).unwrap();
     let accessory_mod = handlebars
         .render("accessory_mod", &json!({ "accessories": accessory_names }))
         .unwrap();
-    let mut accessory_mod_file = File::create(&format!("{}mod.rs", accessory_base_path)).unwrap();
+    let mut accessory_mod_file = File::create(format!("{}mod.rs", accessory_base_path)).unwrap();
     accessory_mod_file.write_all(accessory_mod.as_bytes()).unwrap();
 }

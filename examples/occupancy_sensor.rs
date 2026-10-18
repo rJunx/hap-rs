@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{occupancy_sensor::OccupancySensorAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, occupancy_sensor::OccupancySensorAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let occupancy_sensor = OccupancySensorAccessory::new(1, AccessoryInformation {
-        name: "Acme Occupancy Sensor".into(),
-        ..Default::default()
-    })?;
+    let occupancy_sensor = OccupancySensorAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Occupancy Sensor".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

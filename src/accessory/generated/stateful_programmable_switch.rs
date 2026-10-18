@@ -3,10 +3,12 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-	accessory::{AccessoryInformation, HapAccessory},
-	service::{HapService, accessory_information::AccessoryInformationService, stateful_programmable_switch::StatefulProgrammableSwitchService},
-	HapType,
-	Result,
+    HapType, Result,
+    accessory::{AccessoryInformation, HapAccessory},
+    service::{
+        HapService, accessory_information::AccessoryInformationService,
+        stateful_programmable_switch::StatefulProgrammableSwitchService,
+    },
 };
 
 /// Stateful Programmable Switch accessory.
@@ -26,7 +28,8 @@ impl StatefulProgrammableSwitchAccessory {
     pub fn new(id: u64, information: AccessoryInformation) -> Result<Self> {
         let accessory_information = information.to_service(1, id)?;
         let stateful_programmable_switch_id = accessory_information.get_characteristics().len() as u64;
-        let mut stateful_programmable_switch = StatefulProgrammableSwitchService::new(1 + stateful_programmable_switch_id + 1, id);
+        let mut stateful_programmable_switch =
+            StatefulProgrammableSwitchService::new(1 + stateful_programmable_switch_id + 1, id);
         stateful_programmable_switch.set_primary(true);
 
         Ok(Self {
@@ -65,17 +68,11 @@ impl HapAccessory for StatefulProgrammableSwitchAccessory {
     }
 
     fn get_services(&self) -> Vec<&dyn HapService> {
-        vec![
-            &self.accessory_information,
-            &self.stateful_programmable_switch,
-        ]
+        vec![&self.accessory_information, &self.stateful_programmable_switch]
     }
 
     fn get_mut_services(&mut self) -> Vec<&mut dyn HapService> {
-        vec![
-            &mut self.accessory_information,
-            &mut self.stateful_programmable_switch,
-        ]
+        vec![&mut self.accessory_information, &mut self.stateful_programmable_switch]
     }
 }
 

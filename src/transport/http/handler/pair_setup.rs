@@ -1,13 +1,13 @@
 use chacha20poly1305::{AeadInOut, ChaCha20Poly1305, KeyInit, Nonce, Tag};
+use ed25519_dalek::{Signer, Verifier};
 use futures::future::{BoxFuture, FutureExt};
-use hyper::{body::Buf, Body};
+use hyper::{Body, body::Buf};
 use log::{debug, info};
 use num::BigUint;
-use ed25519_dalek::{Signer, Verifier};
-use rand::{rand_core::UnwrapErr, rngs::SysRng, Rng};
-use sha2_09::{digest::Digest, Sha512};
+use rand::{Rng, rand_core::UnwrapErr, rngs::SysRng};
+use sha2_09::{Sha512, digest::Digest};
 use srp::{
-    client::{srp_private_key, SrpClient},
+    client::{SrpClient, srp_private_key},
     groups::G_3072,
     server::{SrpServer, UserRecord},
     types::SrpGroup,
@@ -181,7 +181,7 @@ async fn handle_start(handler: &mut PairSetup, config: pointer::Config) -> Resul
 
     // TODO - respect pairing flags (specification p. 35 - 7.) for split pair setup
 
-    let private_key = srp_private_key::<Sha512>(b"Pair-Setup", &config.lock().await.pin.to_string().as_bytes(), &salt); // x = H(s | H(I | ":" | P))
+    let private_key = srp_private_key::<Sha512>(b"Pair-Setup", config.lock().await.pin.to_string().as_bytes(), &salt); // x = H(s | H(I | ":" | P))
     let srp_client = SrpClient::<Sha512>::new(&private_key, &G_3072);
     let verifier = srp_client.get_password_verifier(&private_key); // v = g^x
 
@@ -276,7 +276,10 @@ async fn handle_exchange(
                 let sub_tlv = tlv::decode(&decrypted_data);
                 let device_pairing_id = sub_tlv.get(&(Type::Identifier as u8)).ok_or(tlv::Error::Unknown)?;
                 let device_ltpk = ed25519_dalek::VerifyingKey::try_from(
-                    sub_tlv.get(&(Type::PublicKey as u8)).ok_or(tlv::Error::Unknown)?.as_slice(),
+                    sub_tlv
+                        .get(&(Type::PublicKey as u8))
+                        .ok_or(tlv::Error::Unknown)?
+                        .as_slice(),
                 )?;
                 let device_signature = ed25519_dalek::Signature::from_slice(
                     sub_tlv.get(&(Type::Signature as u8)).ok_or(tlv::Error::Unknown)?,
@@ -302,16 +305,16 @@ async fn handle_exchange(
                 let mut pairing_ltpk = [0; 32];
                 pairing_ltpk[..32].copy_from_slice(&device_ltpk.as_bytes()[..32]);
 
-                if let Some(max_peers) = config.lock().await.max_peers {
-                    if storage.lock().await.count_pairings().await? + 1 > max_peers {
-                        return Err(tlv::Error::MaxPeers);
-                    }
+                if let Some(max_peers) = config.lock().await.max_peers
+                    && storage.lock().await.count_pairings().await? + 1 > max_peers
+                {
+                    return Err(tlv::Error::MaxPeers);
                 }
 
                 let pairing = Pairing::new(pairing_uuid, Permissions::Admin, device_ltpk.to_bytes());
                 storage.lock().await.save_pairing(&pairing).await?;
 
-                debug!("pairing: {:?}", &pairing);
+                debug!("pairing: {:?}", pairing);
 
                 let accessory_x = hkdf_extract_and_expand(
                     b"Pair-Setup-Accessory-Sign-Salt",
@@ -375,11 +378,11 @@ fn verify_client_proof<D: Digest>(
     group: &SrpGroup,
 ) -> Result<Vec<u8>, tlv::Error> {
     let mut dhn = D::new();
-    dhn.update(&group.n.to_bytes_be());
+    dhn.update(group.n.to_bytes_be());
     let hn = BigUint::from_bytes_be(&dhn.finalize());
 
     let mut dhg = D::new();
-    dhg.update(&group.g.to_bytes_be());
+    dhg.update(group.g.to_bytes_be());
     let hg = BigUint::from_bytes_be(&dhg.finalize());
 
     let hng = hn.bitxor(hg);
@@ -390,7 +393,7 @@ fn verify_client_proof<D: Digest>(
 
     let mut d = D::new();
     // M = H(H(N) xor H(g), H(I), s, A, B, K)
-    d.update(&hng.to_bytes_be());
+    d.update(hng.to_bytes_be());
     d.update(&hi);
     d.update(salt);
     d.update(a_pub);
@@ -467,10 +470,13 @@ mod tests {
 
         let b_proof = verify_client_proof::<Sha512>(&b_pub, &a_pub, &a_proof, &salt, &shared_secret, &G_3072).unwrap();
 
-        assert_eq!(b_proof, vec![
-            53, 222, 231, 209, 7, 123, 202, 208, 135, 119, 183, 90, 79, 154, 55, 155, 63, 56, 215, 210, 4, 20, 229,
-            119, 234, 168, 107, 137, 48, 172, 180, 244, 184, 142, 170, 120, 188, 106, 94, 135, 122, 4, 211, 21, 190,
-            26, 121, 180, 13, 192, 173, 246, 172, 223, 161, 192, 52, 251, 187, 66, 52, 170, 18, 85
-        ]);
+        assert_eq!(
+            b_proof,
+            vec![
+                53, 222, 231, 209, 7, 123, 202, 208, 135, 119, 183, 90, 79, 154, 55, 155, 63, 56, 215, 210, 4, 20, 229,
+                119, 234, 168, 107, 137, 48, 172, 180, 244, 184, 142, 170, 120, 188, 106, 94, 135, 122, 4, 211, 21,
+                190, 26, 121, 180, 13, 192, 173, 246, 172, 223, 161, 192, 52, 251, 187, 66, 52, 170, 18, 85
+            ]
+        );
     }
 }

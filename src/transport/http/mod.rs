@@ -1,16 +1,12 @@
 use hyper::{
+    Body, Response, StatusCode,
     header::{CONTENT_LENGTH, CONTENT_TYPE},
-    Body,
-    Response,
-    StatusCode,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    Error, HapType, Result,
     characteristic::{Format, Perm, Unit},
-    Error,
-    HapType,
-    Result,
 };
 
 // FORK: `pub(crate)` so `pointer::SnapshotProvider` can name `handler::resource::SnapshotFn`.
@@ -40,12 +36,12 @@ enum ContentType {
     HapJson,
 }
 
-impl ContentType {
-    pub fn to_string(self) -> String {
-        match self {
-            ContentType::PairingTLV8 => "application/pairing+tlv8".into(),
-            ContentType::HapJson => "application/hap+json".into(),
-        }
+impl std::fmt::Display for ContentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ContentType::PairingTLV8 => "application/pairing+tlv8",
+            ContentType::HapJson => "application/hap+json",
+        })
     }
 }
 
@@ -151,7 +147,7 @@ pub fn event_response(event_objects: Vec<EventObject>) -> Result<Vec<u8>> {
     // on it too.
     let response = format!(
         "EVENT/1.0 200 OK\nContent-Type: {}\nContent-Length: {}\n\n{}",
-        ContentType::HapJson.to_string(),
+        ContentType::HapJson,
         body.len(),
         body,
     );

@@ -3,10 +3,12 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::{
-	accessory::{AccessoryInformation, HapAccessory},
-	service::{HapService, accessory_information::AccessoryInformationService, humidifier_dehumidifier::HumidifierDehumidifierService},
-	HapType,
-	Result,
+    HapType, Result,
+    accessory::{AccessoryInformation, HapAccessory},
+    service::{
+        HapService, accessory_information::AccessoryInformationService,
+        humidifier_dehumidifier::HumidifierDehumidifierService,
+    },
 };
 
 /// Humidifier-Dehumidifier accessory.
@@ -65,17 +67,11 @@ impl HapAccessory for HumidifierDehumidifierAccessory {
     }
 
     fn get_services(&self) -> Vec<&dyn HapService> {
-        vec![
-            &self.accessory_information,
-            &self.humidifier_dehumidifier,
-        ]
+        vec![&self.accessory_information, &self.humidifier_dehumidifier]
     }
 
     fn get_mut_services(&mut self) -> Vec<&mut dyn HapService> {
-        vec![
-            &mut self.accessory_information,
-            &mut self.humidifier_dehumidifier,
-        ]
+        vec![&mut self.accessory_information, &mut self.humidifier_dehumidifier]
     }
 }
 

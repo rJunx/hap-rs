@@ -270,7 +270,9 @@ impl From<ed25519_dalek::SignatureError> for Error {
 pub type Container = Vec<Value>;
 
 impl Encodable for Container {
-    fn encode(self) -> Vec<u8> { encode(self.into_iter().map(|v| v.as_tlv()).collect::<Vec<_>>()) }
+    fn encode(self) -> Vec<u8> {
+        encode(self.into_iter().map(|v| v.as_tlv()).collect::<Vec<_>>())
+    }
 }
 
 pub struct ErrorContainer {
@@ -279,11 +281,15 @@ pub struct ErrorContainer {
 }
 
 impl ErrorContainer {
-    pub fn new(step: u8, error: Error) -> ErrorContainer { ErrorContainer { step, error } }
+    pub fn new(step: u8, error: Error) -> ErrorContainer {
+        ErrorContainer { step, error }
+    }
 }
 
 impl Encodable for ErrorContainer {
-    fn encode(self) -> Vec<u8> { vec![Value::State(self.step), Value::Error(self.error)].encode() }
+    fn encode(self) -> Vec<u8> {
+        vec![Value::State(self.step), Value::Error(self.error)].encode()
+    }
 }
 
 // FORK: this crate ships no tests for `decode`, and `decode` parses unauthenticated pair-setup
@@ -300,7 +306,7 @@ mod fork_tests {
         for len in 0u16..=255 {
             for tail in 0..8usize {
                 let mut buf = vec![0x01u8, len as u8];
-                buf.extend(std::iter::repeat(0xAB).take(tail));
+                buf.extend(std::iter::repeat_n(0xAB, tail));
 
                 // Must not panic. The value is irrelevant; surviving is the assertion.
                 let _ = decode(&buf);

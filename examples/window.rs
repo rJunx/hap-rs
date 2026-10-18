@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{window::WindowAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, window::WindowAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let window = WindowAccessory::new(1, AccessoryInformation {
-        name: "Acme Window".into(),
-        ..Default::default()
-    })?;
+    let window = WindowAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Window".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

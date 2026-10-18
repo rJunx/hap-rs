@@ -1,21 +1,19 @@
-use tokio;
-
 use hap::{
-    accessory::{contact_sensor::ContactSensorAccessory, AccessoryCategory, AccessoryInformation},
+    Config, MacAddress, Pin, Result,
+    accessory::{AccessoryCategory, AccessoryInformation, contact_sensor::ContactSensorAccessory},
     server::{IpServer, Server},
     storage::{FileStorage, Storage},
-    Config,
-    MacAddress,
-    Pin,
-    Result,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let contact_sensor = ContactSensorAccessory::new(1, AccessoryInformation {
-        name: "Acme Contact Sensor".into(),
-        ..Default::default()
-    })?;
+    let contact_sensor = ContactSensorAccessory::new(
+        1,
+        AccessoryInformation {
+            name: "Acme Contact Sensor".into(),
+            ..Default::default()
+        },
+    )?;
 
     let mut storage = FileStorage::current_dir().await?;
 

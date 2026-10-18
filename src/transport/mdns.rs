@@ -24,8 +24,8 @@ impl MdnsResponder {
     pub async fn new(config: pointer::Config) -> Self {
         let host = config.lock().await.host;
 
-        let (responder, task) = libmdns::Responder::with_default_handle_and_ip_list(vec![host])
-            .expect("creating mDNS responder");
+        let (responder, task) =
+            libmdns::Responder::with_default_handle_and_ip_list(vec![host]).expect("creating mDNS responder");
 
         MdnsResponder {
             config,
@@ -55,12 +55,9 @@ impl MdnsResponder {
         // the slice now, so the two cannot drift apart again.
         let txt: Vec<&str> = tr.iter().map(String::as_str).collect();
 
-        self.service = Some(
-            self.responder
-                .register("_hap._tcp".into(), name.as_str(), port, &txt),
-        );
+        self.service = Some(self.responder.register("_hap._tcp", name.as_str(), port, &txt));
 
-        debug!("setting mDNS records: {:?}", &tr);
+        debug!("setting mDNS records: {:?}", tr);
     }
 
     /// Returns the mDNS task to throw on a scheduler.

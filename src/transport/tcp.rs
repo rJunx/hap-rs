@@ -2,12 +2,12 @@ use byteorder::{ByteOrder, LittleEndian};
 use bytes::{Buf, BytesMut};
 use chacha20poly1305::{AeadInOut, ChaCha20Poly1305, KeyInit, Nonce, Tag};
 use futures::{
+    Stream,
     channel::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
     io::Error,
-    Stream,
 };
 use log::{debug, error};
 use std::{
@@ -60,7 +60,7 @@ impl StreamWrapper {
                 let r_len = incoming.len();
                 self.incoming_buf.extend_from_slice(&incoming);
 
-                debug!("received {} Bytes on incoming TCP stream receiver", &r_len);
+                debug!("received {} Bytes on incoming TCP stream receiver", r_len);
 
                 Poll::Ready(r_len)
             },
@@ -119,7 +119,7 @@ impl AsyncWrite for StreamWrapper {
         stream_wrapper
             .outgoing_sender
             .unbounded_send(buf.to_vec())
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "couldn't write"))?;
+            .map_err(|_| io::Error::other("couldn't write"))?;
 
         if let Some(waker) = stream_wrapper
             .outgoing_waker
@@ -140,7 +140,7 @@ impl AsyncWrite for StreamWrapper {
 
         let w_len = buf.len();
 
-        debug!("wrote {} Bytes to outgoing TCP stream sender", &w_len);
+        debug!("wrote {} Bytes to outgoing TCP stream sender", w_len);
 
         Poll::Ready(Ok(w_len))
     }
@@ -190,6 +190,8 @@ pub struct EncryptedStream {
 }
 
 impl EncryptedStream {
+    /// The stream and the four channel ends that drive it.
+    #[allow(clippy::type_complexity)]
     pub fn new(
         stream: TcpStream,
     ) -> (
@@ -269,7 +271,7 @@ impl EncryptedStream {
                 &self.encrypted_buf[(self.packet_len - 14)..(self.packet_len + 2)],
                 &mut self.decrypt_count,
             )
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "decryption failed"))?;
+            .map_err(|_| io::Error::other("decryption failed"))?;
 
             self.decrypted_buf.extend_from_slice(&decrypted);
 
@@ -412,14 +414,14 @@ impl EncryptedStream {
                 Poll::Ready(Ok(())) => {
                     let data_filled = data.filled();
 
-                    if data_filled.len() == 0 {
+                    if data_filled.is_empty() {
                         return Poll::Ready(Ok(()));
                     }
 
                     encrypted_stream
                         .incoming_sender
                         .unbounded_send(data_filled.to_vec())
-                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "couldn't send incoming data"))?;
+                        .map_err(|_| io::Error::other("couldn't send incoming data"))?;
 
                     data.clear();
                 },
@@ -524,7 +526,7 @@ impl AsyncWrite for EncryptedStream {
                 Poll::Ready(Ok(())) => {},
             }
 
-            let mut write_buf = &buf[..];
+            let mut write_buf = buf;
 
             // HAP frames plaintext in chunks of at most 1024 bytes, each with its own length
             // prefix as additional authenticated data and its own 16-byte tag.
@@ -533,7 +535,7 @@ impl AsyncWrite for EncryptedStream {
 
                 let (aad, chunk, auth_tag) =
                     encrypt_chunk(&shared_secret, &write_buf[..take], &mut encrypted_stream.encrypt_count)
-                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failed"))?;
+                        .map_err(|_| io::Error::other("encryption failed"))?;
 
                 encrypted_stream.pending_write.extend_from_slice(&aad);
                 encrypted_stream.pending_write.extend_from_slice(&chunk);

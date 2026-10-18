@@ -1,5 +1,5 @@
 use futures::future::{BoxFuture, FutureExt};
-use hyper::{body::Buf, Body};
+use hyper::{Body, body::Buf};
 use log::{debug, info};
 use std::{ops::Deref, str};
 use uuid::Uuid;
@@ -15,7 +15,9 @@ use crate::{
 pub struct Pairings;
 
 impl Pairings {
-    pub fn new() -> Pairings { Pairings }
+    pub fn new() -> Pairings {
+        Pairings
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -174,10 +176,10 @@ async fn handle_add(
                 .await;
         },
         Err(_) => {
-            if let Some(max_peers) = config.lock().await.max_peers {
-                if s.count_pairings().await? + 1 > max_peers {
-                    return Err(tlv::Error::MaxPeers);
-                }
+            if let Some(max_peers) = config.lock().await.max_peers
+                && s.count_pairings().await? + 1 > max_peers
+            {
+                return Err(tlv::Error::MaxPeers);
             }
 
             let mut public_key = [0; 32];
