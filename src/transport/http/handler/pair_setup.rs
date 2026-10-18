@@ -1,12 +1,11 @@
-use aead::{generic_array::GenericArray, AeadInPlace, NewAead};
-use chacha20poly1305::ChaCha20Poly1305;
+use chacha20poly1305::{AeadInOut, ChaCha20Poly1305, KeyInit, Nonce, Tag};
 use futures::future::{BoxFuture, FutureExt};
 use hyper::{body::Buf, Body};
 use log::{debug, info};
 use num::BigUint;
 use ed25519_dalek::{Signer, Verifier};
 use rand::{rand_core::UnwrapErr, rngs::SysRng, Rng};
-use sha2::{digest::Digest, Sha512};
+use sha2_09::{digest::Digest, Sha512};
 use srp::{
     client::{srp_private_key, SrpClient},
     groups::G_3072,
@@ -263,15 +262,15 @@ async fn handle_exchange(
                 let mut nonce = vec![0; 4];
                 nonce.extend(b"PS-Msg05");
 
-                let aead = ChaCha20Poly1305::new(GenericArray::from_slice(&encryption_key));
+                let aead = ChaCha20Poly1305::new(&encryption_key.into());
 
                 let mut decrypted_data = Vec::new();
                 decrypted_data.extend_from_slice(&encrypted_data);
-                aead.decrypt_in_place_detached(
-                    GenericArray::from_slice(&nonce),
+                aead.decrypt_inout_detached(
+                    &Nonce::try_from(nonce.as_slice()).expect("a 12-byte nonce"),
                     &[],
-                    &mut decrypted_data,
-                    GenericArray::from_slice(&auth_tag),
+                    decrypted_data.as_mut_slice().into(),
+                    &Tag::try_from(auth_tag.as_slice()).expect("a 16-byte tag"),
                 )?;
 
                 let sub_tlv = tlv::decode(&decrypted_data);
@@ -343,9 +342,12 @@ async fn handle_exchange(
 
                 let mut encrypted_data = Vec::new();
                 encrypted_data.extend_from_slice(&encoded_sub_tlv);
-                let auth_tag =
-                    aead.encrypt_in_place_detached(GenericArray::from_slice(&nonce), &[], &mut encrypted_data)?;
-                encrypted_data.extend(&auth_tag);
+                let auth_tag = aead.encrypt_inout_detached(
+                    &Nonce::try_from(nonce.as_slice()).expect("a 12-byte nonce"),
+                    &[],
+                    encrypted_data.as_mut_slice().into(),
+                )?;
+                encrypted_data.extend_from_slice(&auth_tag);
 
                 event_emitter
                     .lock()
@@ -395,13 +397,13 @@ fn verify_client_proof<D: Digest>(
     d.update(b_pub);
     d.update(key);
 
-    if a_proof == d.finalize().as_slice() {
+    if a_proof == &d.finalize()[..] {
         // H(A, M, K)
         let mut d = D::new();
         d.update(a_pub);
         d.update(a_proof);
         d.update(key);
-        Ok(d.finalize().as_slice().to_vec())
+        Ok(d.finalize().to_vec())
     } else {
         Err(tlv::Error::Authentication)
     }

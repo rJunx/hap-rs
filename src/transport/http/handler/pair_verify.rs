@@ -1,5 +1,4 @@
-use aead::{generic_array::GenericArray, AeadInPlace, NewAead};
-use chacha20poly1305::ChaCha20Poly1305;
+use chacha20poly1305::{AeadInOut, ChaCha20Poly1305, KeyInit, Nonce, Tag};
 use futures::{
     channel::oneshot,
     future::{BoxFuture, FutureExt},
@@ -169,12 +168,16 @@ async fn handle_start(
     let mut nonce = vec![0; 4];
     nonce.extend(b"PV-Msg02");
 
-    let aead = ChaCha20Poly1305::new(GenericArray::from_slice(&session_key));
+    let aead = ChaCha20Poly1305::new(&session_key.into());
 
     let mut encrypted_data = Vec::new();
     encrypted_data.extend_from_slice(&encoded_sub_tlv);
-    let auth_tag = aead.encrypt_in_place_detached(GenericArray::from_slice(&nonce), &[], &mut encrypted_data)?;
-    encrypted_data.extend(&auth_tag);
+    let auth_tag = aead.encrypt_inout_detached(
+        &Nonce::try_from(nonce.as_slice()).expect("a 12-byte nonce"),
+        &[],
+        encrypted_data.as_mut_slice().into(),
+    )?;
+    encrypted_data.extend_from_slice(&auth_tag);
 
     info!("pair verify M2: sending verify start response");
 
@@ -201,15 +204,15 @@ async fn handle_finish(
             let mut nonce = vec![0; 4];
             nonce.extend(b"PV-Msg03");
 
-            let aead = ChaCha20Poly1305::new(GenericArray::from_slice(&session.session_key));
+            let aead = ChaCha20Poly1305::new(&session.session_key.into());
 
             let mut decrypted_data = Vec::new();
             decrypted_data.extend_from_slice(&encrypted_data);
-            aead.decrypt_in_place_detached(
-                GenericArray::from_slice(&nonce),
+            aead.decrypt_inout_detached(
+                &Nonce::try_from(nonce.as_slice()).expect("a 12-byte nonce"),
                 &[],
-                &mut decrypted_data,
-                GenericArray::from_slice(&auth_tag),
+                decrypted_data.as_mut_slice().into(),
+                &Tag::try_from(auth_tag.as_slice()).expect("a 16-byte tag"),
             )?;
 
             let sub_tlv = tlv::decode(&decrypted_data);

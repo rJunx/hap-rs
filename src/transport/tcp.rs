@@ -1,7 +1,6 @@
-use aead::{generic_array::GenericArray, AeadInPlace, NewAead};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{Buf, BytesMut};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce, Tag};
+use chacha20poly1305::{AeadInOut, ChaCha20Poly1305, KeyInit, Nonce, Tag};
 use futures::{
     channel::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -588,7 +587,7 @@ fn decrypt_chunk(
     count: &mut u64,
 ) -> Result<Vec<u8>> {
     let read_key = compute_read_key(shared_secret)?;
-    let aead = ChaCha20Poly1305::new(GenericArray::from_slice(&read_key));
+    let aead = ChaCha20Poly1305::new(&read_key.into());
 
     let mut nonce = vec![0; 4];
     let mut suffix = vec![0; 8];
@@ -598,14 +597,20 @@ fn decrypt_chunk(
 
     let mut buffer = Vec::new();
     buffer.extend_from_slice(data);
-    aead.decrypt_in_place_detached(Nonce::from_slice(&nonce), aad, &mut buffer, Tag::from_slice(&auth_tag))?;
+    let tag = Tag::try_from(auth_tag).map_err(|_| crate::Error::Aead)?;
+    aead.decrypt_inout_detached(
+        &Nonce::try_from(nonce.as_slice()).expect("a 12-byte nonce"),
+        aad,
+        buffer.as_mut_slice().into(),
+        &tag,
+    )?;
 
     Ok(buffer)
 }
 
 fn encrypt_chunk(shared_secret: &[u8; 32], data: &[u8], count: &mut u64) -> Result<([u8; 2], Vec<u8>, [u8; 16])> {
     let write_key = compute_write_key(shared_secret)?;
-    let aead = ChaCha20Poly1305::new(GenericArray::from_slice(&write_key));
+    let aead = ChaCha20Poly1305::new(&write_key.into());
 
     let mut nonce = vec![0; 4];
     let mut suffix = vec![0; 8];
@@ -618,7 +623,11 @@ fn encrypt_chunk(shared_secret: &[u8; 32], data: &[u8], count: &mut u64) -> Resu
 
     let mut buffer = Vec::new();
     buffer.extend_from_slice(data);
-    let auth_tag = aead.encrypt_in_place_detached(Nonce::from_slice(&nonce), &aad, &mut buffer)?;
+    let auth_tag = aead.encrypt_inout_detached(
+        &Nonce::try_from(nonce.as_slice()).expect("a 12-byte nonce"),
+        &aad,
+        buffer.as_mut_slice().into(),
+    )?;
 
     Ok((aad, buffer, auth_tag.into()))
 }

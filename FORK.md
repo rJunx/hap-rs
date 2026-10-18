@@ -332,6 +332,21 @@ was the only reason a third base64 sat in rs-home's lock beside the 0.22 that re
 paths) now use `engine::general_purpose::STANDARD`, which is the same standard-alphabet, padded
 encoding the free functions used -- the bytes on the wire do not change.
 
+
+## 22. ChaCha20-Poly1305 and HKDF on the current RustCrypto generation
+
+**`Cargo.toml`, `src/transport/{mod,tcp}.rs`, `src/transport/http/handler/pair_{setup,verify}.rs`**
+
+`chacha20poly1305` 0.8 -> 0.11 (`aead` 0.6), `hkdf` 0.11 -> 0.13, `sha2` 0.9 -> 0.11. No
+advisories drove it: 0.8's `chacha20poly1305` capped `zeroize` below 1.4 while rs-matter needs
+1.8, so this fork could not take its own patch releases, and its older generation sat in rs-home's
+lock beside rs-matter's. The algorithms are unchanged; only the API moved -- `AeadInOut` replaces
+the deprecated `AeadInPlace`, and `hybrid-array` replaces `GenericArray`.
+
+**SRP stays on the old generation.** srp 0.5 is generic over digest 0.9, and srp's own move to
+the new one is only a release candidate (0.7). So `sha2` 0.9 remains, renamed `sha2_09`, and only
+`pair_setup.rs` -- whose `Sha512` is all SRP -- uses it. Pair-setup's proof code is untouched.
+
 ---
 
 ## Known-missing, not yet fixed
