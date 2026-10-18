@@ -309,6 +309,19 @@ remove still pending, retried every ~30 s, and showed the TV as **"No Response"*
 The outcome iOS asks for -- no such pairing -- is already true, so it is now answered as a success
 (HAP-NodeJS does the same). Any other storage error still fails the request.
 
+## 20. A boolean written to an integer characteristic was refused
+
+**`src/characteristic/mod.rs`**
+
+`set_value` already accepted `0`/`1` for a `bool` characteristic ("the controller is setting boolean
+values either as a boolean or as an integer"), but not the converse. iOS writes some integer
+characteristics as `true`/`false` -- the camera's `uint8` operating-mode switches (see #14) and
+`Active` -- and `serde_json::from_value` refused those with `InvalidValue(UInt8)`, so the write
+failed and the Home app's camera setting did not stick. Observed several times a day in
+rs-hap-camera's journal.
+
+A boolean written to any integer format is now 0 or 1, as HAP-NodeJS coerces it.
+
 ---
 
 ## Known-missing, not yet fixed

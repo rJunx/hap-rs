@@ -787,6 +787,19 @@ where
             } else {
                 return Err(Error::InvalidValue(Characteristic::get_format(self)));
             }
+        } else if value.is_boolean()
+            && matches!(
+                self.format,
+                Format::UInt8 | Format::UInt16 | Format::UInt32 | Format::UInt64 | Format::Int32
+            )
+        {
+            // FORK: the converse of the case above, and the one that was missing. iOS writes some
+            // integer characteristics as a JSON boolean -- the camera's operating-mode switches
+            // and `Active` among them -- and `from_value` refused `true` for a `u8` as
+            // `InvalidValue(UInt8)`, failing the write. 0 / 1 is what the boolean means; HAP-NodeJS
+            // coerces it the same way. See FORK.md #20.
+            let n = u8::from(value.as_bool().unwrap_or(false));
+            v = serde_json::from_value(json!(n)).map_err(|_| Error::InvalidValue(Characteristic::get_format(self)))?;
         } else if self.format == Format::Tlv8 && value.is_string() {
             // FORK: the mirror of the TLV8 base64 encoding in `Serialize`.
             //
