@@ -168,13 +168,13 @@ impl From<SystemMetadata> for RenderMetadata {
         let mut characteristic_out_values = HashMap::new();
 
         for (_, characteristic) in m.assistant.characteristics.clone() {
-            if let (Some(ref read_name), Some(ref values), &None) =
+            if let (Some(read_name), Some(values), &None) =
                 (&characteristic.read, &characteristic.values, &characteristic.out_values)
             {
                 characteristic_in_values.insert(read_name.clone(), values.clone());
             }
 
-            if let (Some(ref read_write_name), Some(ref values), &None) = (
+            if let (Some(read_write_name), Some(values), &None) = (
                 &characteristic.read_write,
                 &characteristic.values,
                 &characteristic.out_values,
@@ -850,9 +850,9 @@ impl {{pascal_case characteristic.DefaultDescription}}Characteristic {
             ..Default::default()
         });
 
-        if let Some(ref min_value) = &c.0.min_value {
+        if let Some(min_value) = &c.0.min_value {
             c.0.value = min_value.clone();
-        } else if let Some(ref valid_values) = &c.0.valid_values {
+        } else if let Some(valid_values) = &c.0.valid_values {
             if valid_values.len() > 0 {
                 c.0.value = valid_values[0].clone();
             }

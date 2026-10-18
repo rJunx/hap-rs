@@ -347,6 +347,20 @@ the deprecated `AeadInPlace`, and `hybrid-array` replaces `GenericArray`.
 the new one is only a release candidate (0.7). So `sha2` 0.9 remains, renamed `sha2_09`, and only
 `pair_setup.rs` -- whose `Sha512` is all SRP -- uses it. Pair-setup's proof code is untouched.
 
+
+## 23. Edition 2024
+
+**`Cargo.toml`, `codegen/Cargo.toml`, `codegen/src/main.rs`, `src/characteristic/generated/*`,
+`examples/*`**
+
+Mechanical, from `cargo fix --edition`, which is why it touches so many files. Two kinds of change:
+
+* Every generated characteristic wrote `if let Some(ref min_value) = &c.0.min_value`. 2024 rejects
+  a `ref` under a by-reference default binding, so the `ref` goes -- in the generated files **and**
+  in the codegen template, or the next regeneration would bring the error back.
+* The examples' `std::env::set_var` is `unsafe` in 2024 and is wrapped as such, with cargo's own
+  FIXME left on each: they call it inside `#[tokio::main]`, where runtime threads already exist.
+
 ---
 
 ## Known-missing, not yet fixed

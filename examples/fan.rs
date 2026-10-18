@@ -43,7 +43,8 @@ async fn main() -> Result<()> {
 
     let handle = server.run_handle();
 
-    std::env::set_var("RUST_LOG", "hap=debug");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("RUST_LOG", "hap=debug") };
     env_logger::init();
 
     handle.await

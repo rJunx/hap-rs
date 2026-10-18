@@ -65,7 +65,8 @@ async fn main() -> Result<()> {
         Ok(())
     };
 
-    std::env::set_var("RUST_LOG", "hap=debug");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("RUST_LOG", "hap=debug") };
     env_logger::init();
 
     futures::try_join!(handle, stream_of_new_accessories)?;

@@ -45,9 +45,9 @@ impl DataStreamHapTransportInterruptCharacteristic {
             ..Default::default()
         });
 
-        if let Some(ref min_value) = &c.0.min_value {
+        if let Some(min_value) = &c.0.min_value {
             c.0.value = min_value.clone();
-        } else if let Some(ref valid_values) = &c.0.valid_values {
+        } else if let Some(valid_values) = &c.0.valid_values {
             if valid_values.len() > 0 {
                 c.0.value = valid_values[0].clone();
             }
