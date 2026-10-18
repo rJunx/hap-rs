@@ -113,13 +113,14 @@ impl Config {
     /// FORK: the Bonjour `sh` value -- the first four bytes of `SHA-512(setup_id || device_id)`,
     /// base64-encoded.
     pub fn setup_hash(&self) -> String {
+        use base64::Engine as _;
         use sha2::{Digest, Sha512};
 
         let mut hasher = Sha512::new();
         hasher.update(self.setup_id.as_bytes());
         hasher.update(self.device_id_string().as_bytes());
 
-        base64::encode(&hasher.finalize()[..4])
+        base64::engine::general_purpose::STANDARD.encode(&hasher.finalize()[..4])
     }
 
     /// FORK: the `X-HM://` setup URI, which is what a HomeKit setup QR code encodes.

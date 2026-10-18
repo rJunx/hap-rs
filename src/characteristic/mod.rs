@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use base64::Engine as _;
 use erased_serde::serialize_trait_object;
 use futures::future::BoxFuture;
 use serde::{
@@ -423,7 +424,7 @@ fn tlv8_value_to_base64<T: Serialize, E: serde::ser::Error>(value: &T) -> std::r
         other => return Err(E::custom(format!("TLV8 value was neither array nor string: {other}"))),
     };
 
-    Ok(base64::encode(bytes))
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
 impl<T: fmt::Debug + Default + Clone + Serialize + Send + Sync> Serialize for Characteristic<T> {
@@ -769,7 +770,7 @@ where
         // it was correctly computed and correctly returned.
         if self.format == Format::Tlv8 {
             let bytes: Vec<u8> = serde_json::from_value(json!(value)).unwrap_or_default();
-            return Ok(json!(base64::encode(&bytes)));
+            return Ok(json!(base64::engine::general_purpose::STANDARD.encode(&bytes)));
         }
 
         Ok(json!(value))
@@ -808,7 +809,7 @@ where
             // characteristics are `Characteristic<Vec<u8>>`, so `from_value` would reject it as
             // `InvalidValue(Tlv8)`. Decode here so the write path and the read path agree.
             let encoded = value.as_str().unwrap_or_default();
-            let bytes = base64::decode(encoded).map_err(|_| Error::InvalidValue(Format::Tlv8))?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| Error::InvalidValue(Format::Tlv8))?;
 
             v = serde_json::from_value(json!(bytes))
                 .map_err(|_| Error::InvalidValue(Characteristic::get_format(self)))?;

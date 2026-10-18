@@ -322,6 +322,16 @@ rs-hap-camera's journal.
 
 A boolean written to any integer format is now 0 or 1, as HAP-NodeJS coerces it.
 
+## 21. base64 0.13 -> 0.23
+
+**`Cargo.toml`, `src/config.rs`, `src/characteristic/mod.rs`**
+
+0.13 was kept for its free functions `base64::encode`/`decode`, deprecated since 0.21. That pin
+was the only reason a third base64 sat in rs-home's lock beside the 0.22 that reqwest pulls and the
+0.23 that hyper-util does. The four call sites (the `sh` setup hash and the TLV8 encode/decode
+paths) now use `engine::general_purpose::STANDARD`, which is the same standard-alphabet, padded
+encoding the free functions used -- the bytes on the wire do not change.
+
 ---
 
 ## Known-missing, not yet fixed
