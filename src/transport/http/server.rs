@@ -216,7 +216,25 @@ impl Service<Request<Body>> for Api {
         }
 
         let fut = async move {
-            match handler.take() {
+            // FORK: at debug level, the request and the answer in full -- method, path with query,
+            // body, status, response body. The transport log only ever showed byte counts, which
+            // could tell that a home hub hung up after one particular exchange but not what that
+            // exchange was. Off unless debug logging is on, since it buffers both bodies.
+            let debug = log::log_enabled!(log::Level::Debug);
+            // Only `/characteristics` bodies are printed: they are JSON and carry no secrets,
+            // unlike the pairing exchanges, which are binary key material.
+            let body = if debug && logged_path == "/characteristics" {
+                let bytes = hyper::body::to_bytes(body).await?;
+                debug!(
+                    "request {logged_method} {uri}: {}",
+                    String::from_utf8_lossy(&bytes[..bytes.len().min(2048)])
+                );
+                Body::from(bytes)
+            } else {
+                body
+            };
+
+            let response = match handler.take() {
                 Some(handler) =>
                     handler
                         .lock()
@@ -242,7 +260,24 @@ impl Service<Request<Body>> for Api {
                     log::warn!("no handler for {logged_method} {logged_path}");
                     future::ready(status_response(StatusCode::NOT_FOUND)).await
                 },
+            }?;
+
+            if !debug {
+                return Ok(response);
             }
+            let (parts, body) = response.into_parts();
+            let bytes = hyper::body::to_bytes(body).await?;
+            // Pairing exchanges are binary TLV8; only JSON is worth printing as text.
+            let text = parts
+                .headers
+                .get(hyper::header::CONTENT_TYPE)
+                .is_some_and(|t| t.as_bytes().ends_with(b"json"));
+            debug!(
+                "response {logged_method} {logged_path}: {} {}",
+                parts.status,
+                if text { String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).into_owned() } else { format!("({} bytes)", bytes.len()) }
+            );
+            Ok(Response::from_parts(parts, Body::from(bytes)))
         }
         .boxed();
 

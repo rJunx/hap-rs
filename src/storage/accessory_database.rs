@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use futures::lock::Mutex;
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde_json::json;
 
 use crate::{
@@ -206,6 +206,13 @@ impl AccessoryDatabase {
                                         );
                                     }
                                 } else {
+                                    // FORK: said out loud. A controller writing a characteristic
+                                    // the accessory declared read-only is a mismatch between what
+                                    // iOS expects and what was published, and it failed silently.
+                                    warn!(
+                                        "refused write to read-only {}.{}: {}",
+                                        write_object.aid, write_object.iid, value
+                                    );
                                     result_object.status = Status::ReadOnlyCharacteristic as i32;
                                 }
                             }
