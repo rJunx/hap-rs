@@ -216,7 +216,13 @@ async fn handle_remove(
 
     let uuid_str = str::from_utf8(&pairing_id)?;
     let pairing_uuid = Uuid::parse_str(uuid_str)?;
-    storage.lock().await.delete_pairing(&pairing_uuid).await?;
+    // FORK: removing a pairing that is already gone is a success, not an error. See FORK.md #19.
+    match storage.lock().await.delete_pairing(&pairing_uuid).await {
+        Err(crate::Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            info!("pairings M1: {pairing_uuid} was not paired; nothing to remove");
+        },
+        result => result?,
+    }
 
     event_emitter
         .lock()

@@ -296,6 +296,19 @@ deliberately; a shim that kept the 64-byte form would avoid it.
 `OsRng {}` becomes `UnwrapErr(SysRng)`: still the OS RNG, panicking on failure as before.
 `Ed25519Keypair` remains the public name, now an alias for `SigningKey`.
 
+## 19. Removing an absent pairing was refused
+
+**`src/transport/http/handler/pairings.rs`**
+
+`handle_remove` passed the storage error straight back, so a RemovePairing for an identifier with no
+pairing file answered with an error TLV. iOS does send those: after pairing, Apple Home adds the
+home's own controller identity and then removes the identity it set up with -- and repeats the
+remove. Once the first one succeeded, every repeat failed with `NotFound`. iOS read that as the
+remove still pending, retried every ~30 s, and showed the TV as **"No Response"** until it gave up.
+
+The outcome iOS asks for -- no such pairing -- is already true, so it is now answered as a success
+(HAP-NodeJS does the same). Any other storage error still fails the request.
+
 ---
 
 ## Known-missing, not yet fixed
