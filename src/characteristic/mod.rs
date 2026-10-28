@@ -265,9 +265,9 @@ where
     /// not come from a controller, so nothing should react as though it did. Change events are
     /// still emitted, since subscribers care that the value changed regardless of its origin.
     async fn set_value_from_read(&mut self, val: T) -> Result<()> {
-        if self.event_notifications == Some(true)
-            && let Some(ref event_emitter) = self.event_emitter
-        {
+        // FORK: emitted whatever `event_notifications` says -- see FORK.md #26. Each connection's
+        // listener decides from its own subscription list whether to send it.
+        if let Some(ref event_emitter) = self.event_emitter {
             event_emitter
                 .lock()
                 .await
@@ -308,9 +308,9 @@ where
                 .map_err(Error::ValueOnUpdate)?;
         }
 
-        if self.event_notifications == Some(true)
-            && let Some(ref event_emitter) = self.event_emitter
-        {
+        // FORK: emitted whatever `event_notifications` says -- see FORK.md #26. Each connection's
+        // listener decides from its own subscription list whether to send it.
+        if let Some(ref event_emitter) = self.event_emitter {
             event_emitter
                 .lock()
                 .await

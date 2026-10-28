@@ -400,6 +400,25 @@ under about 84 KB -- every characteristic, and camera stills of ~21 KB -- never 
 `poll_outgoing` now drains `pending_write` before it polls the channel, and waits on the socket
 while it cannot.
 
+## 26. One controller unsubscribing silenced an event for every controller
+
+**`src/characteristic/mod.rs`**
+
+`set_value` emitted `CharacteristicValueChanged` only while the characteristic's
+`event_notifications` was `Some(true)`. That is a single value per characteristic, and every
+controller's `ev` write sets it, so the last controller to write it decided for all of them. Each
+connection's listener already filters by its own subscription list (`server.rs`), so the flag was
+not needed to route events -- it could only suppress them.
+
+Measured on 2026-10-25 with the camera's `MotionDetected`: the home hub subscribed, the iPhone
+subscribed while the Home app was open, and the iPhone unsubscribed when it left the app (14:50:07).
+The next motion (14:58:33) sent no event to anyone, the hub kept its subscription but heard
+nothing, and no notification appeared. Which motion alerts arrived depended on whether the Home
+app had last been closed.
+
+The event is now emitted whenever there is an emitter, from `set_value` and from `set_value_from_read`. `event_notifications` is still set by `ev`
+writes and still reported by reads.
+
 ---
 
 ## Known-missing, not yet fixed
