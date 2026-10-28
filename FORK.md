@@ -381,6 +381,25 @@ there is fixed in the codegen template. The hand-written rest is clippy-clean. M
 
 `[build-dependencies]` in `Cargo.toml` are dead -- there is no `build.rs` -- and are left for now.
 
+## 25. Buffered ciphertext stalled once the socket was full
+
+**`src/transport/tcp.rs`**
+
+The encrypted write path (the `FORK:` note on `EncryptedStream::poll_write`) keeps what the socket
+will not take in `pending_write`, and `poll_write` reports the plaintext consumed. But `poll_outgoing` only ever drained that buffer from inside the
+next `poll_write`: woken by the socket once it had room, it polled the outgoing channel, found
+nothing new, and went back to sleep with the ciphertext still buffered. The rest of a response
+waited for the next unrelated write on the same connection.
+
+A response larger than the kernel's send buffer therefore stopped at that size. Measured on
+2026-10-25 with a 207 KB snapshot: the iPhone received 84,152-84,339 bytes on every attempt, then
+closed the connection, and the Home app drew a black tile. The hub's connections carry events, so
+a later event flushed the remainder and alert pictures arrived sometimes and not others. Responses
+under about 84 KB -- every characteristic, and camera stills of ~21 KB -- never reached the limit.
+
+`poll_outgoing` now drains `pending_write` before it polls the channel, and waits on the socket
+while it cannot.
+
 ---
 
 ## Known-missing, not yet fixed

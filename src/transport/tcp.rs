@@ -361,6 +361,17 @@ impl EncryptedStream {
     fn poll_outgoing(self: Pin<&mut Self>, cx: &mut Context) -> Poll<std::result::Result<(), io::Error>> {
         let encrypted_stream = Pin::into_inner(self);
         loop {
+            // FORK: ciphertext left over from an earlier write goes out before anything new. See
+            // FORK.md #25. The socket's waker brings us back here once it has room again.
+            match encrypted_stream.drain_pending_write(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(e)) => {
+                    error!("error writing to outgoing stream: {}", e);
+                    return Poll::Ready(Err(e));
+                },
+                Poll::Ready(Ok(())) => {},
+            }
+
             match Stream::poll_next(Pin::new(&mut encrypted_stream.outgoing_receiver), cx) {
                 Poll::Pending => {
                     *encrypted_stream.outgoing_waker.lock().expect("setting outgoing_waker") = Some(cx.waker().clone());
